@@ -4,25 +4,25 @@
 -- insert into jobs (job_id, job_input) VALUES ("abc123", NULL);
 
 
-CREATE TABLE jobs (
+CREATE TABLE IF NOT EXISTS jobs (
     job_id VARCHAR(32) NOT NULL,   -- uuid without dashes
     PRIMARY KEY (job_id),
-
     job_input BLOB   -- 16 MB
 );
 
-CREATE TABLE job_executions (
+
+-- TODO:  small int for dag BLOB version
+CREATE TABLE IF NOT EXISTS job_executions (
     job_id VARCHAR(32),
+    created_utc DATETIME NOT NULL,
     state TINYINT UNSIGNED,   -- 0 to 255
     worker VARCHAR(255),  -- TODO reference to some worker table???
     -- TODO last update utc and created utc
-
     dag BLOB,
-
     FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
 );
 
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
     job_id VARCHAR(32),
     task_id VARCHAR(32) NOT NULL,
     eligibility_state TINYINT UNSIGNED, -- 0 to 255
@@ -33,7 +33,7 @@ CREATE TABLE tasks (
     FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
 );
 
-CREATE TABLE task_deps (
+CREATE TABLE IF NOT EXISTS task_deps (
     job_id VARCHAR(32),
     task_id VARCHAR(32),
     neighboor_id VARCHAR(32),
@@ -44,7 +44,7 @@ CREATE TABLE task_deps (
 
 );
 
-CREATE TABLE task_executions (
+CREATE TABLE IF NOT EXISTS task_executions (
     job_id VARCHAR(32),
     task_id VARCHAR(32),
     exec_state TINYINT UNSIGNED,

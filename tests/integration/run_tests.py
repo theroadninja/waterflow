@@ -1,42 +1,25 @@
 """
 Integration tests that use a live mysql database
 """
-import base64
-from mysql.connector import connect, pooling
+
+import waterflow
+from waterflow import to_base64_str
 import waterflow.dao
+from waterflow.job import Dag
 from waterflow.task import Task, TaskEligibilityState, TaskExecState
+from waterflow.mysql_config import MysqlConfig
 import uuid
 
 
+
 def get_conn_pool():
-    if os.path.isfile("../../local/mysqlcreds.json"):
-        with open("../../local/mysqlcreds.json") as f:
-            d = json.loads(f.read())
-        username, pwd = d["username"], d["password"]
-    else:
-        pwd = getpass("Password>")
-        username = "root"
-    dbname = "waterflow"
-    host = "localhost"
-
-    return pooling.MySQLConnectionPool(
-        pool_name="waterflow_dao",
-        pool_size=5,  # max for mysql?  default is 5
-        pool_reset_session=True,
-        host=host,
-        database=dbname,
-        user=username,
-        password=pwd,
-    )
+    dbconf = MysqlConfig.from_file("../../local/mysqlconfig.json")
+    return waterflow.get_connection_pool(dbconf, "waterflow_dao")
 
 
-def to_base64(s: str):
-    if not isinstance(s, str):
-        raise ValueError("s must be a string")
-    return base64.b64encode(s.encode("UTF-8")).decode("UTF-8")
 
-def get_id():
-    return str(uuid.uuid4()).replace("-", "")
+
+
 
 if __name__ == "__main__":
     from getpass import getpass   # pycharm: run -> edit configurations -> emulate terminal in output console
@@ -48,23 +31,23 @@ if __name__ == "__main__":
     # conn = connect(host="localhost", user=username, password=pwd, database="waterflow")
     dao = waterflow.dao.DagDao(conn_pool, "waterflow")
 
-    job_input = to_base64("abc")
+    job_input = waterflow.to_base64_str("abc")
 
     job_id = dao.add_job(job_input)
     print(f"added job {job_id}")
 
-    dao.start_job(job_id, worker="worker1")
+    dao.get_and_start_jobs(workers=["worker1"])
 
 
-    task1 = get_id()
-    task2 = get_id()
-    task3 = get_id()
-    task4 = get_id()
+    task1 = waterflow.make_id()
+    task2 = waterflow.make_id()
+    task3 = waterflow.make_id()
+    task4 = waterflow.make_id()
     tasks = [
-        Task(task_id=task1, state=(int(TaskEligibilityState.BLOCKED)), input64=to_base64("A")),
-        Task(task_id=task2, state=(int(TaskEligibilityState.BLOCKED)), input64=to_base64("B")),
-        Task(task_id=task3, state=(int(TaskEligibilityState.BLOCKED)), input64=to_base64("C")),
-        Task(task_id=task4, state=(int(TaskEligibilityState.BLOCKED)), input64=to_base64("D")),
+        Task(task_id=task1, input64=to_base64_str("A")),
+        Task(task_id=task2, input64=to_base64_str("B")),
+        Task(task_id=task3, input64=to_base64_str("C")),
+        Task(task_id=task4, input64=to_base64_str("D")),
     ]
     task_adj = {
         task1: [task2, task3],
@@ -72,7 +55,7 @@ if __name__ == "__main__":
 
     }
 
-    dao.set_dag(job_id, dag64=to_base64("def"), tasks=tasks, task_deps=task_adj)
+    dao.set_dag(job_id, Dag(waterflow.to_base64_str("def"), 0, tasks=tasks, adj_list=task_adj))
 
     dao.start_task(job_id, task3, "worker1")
     dao.start_task(job_id, task2, "worker1")

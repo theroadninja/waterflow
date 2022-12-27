@@ -1,24 +1,24 @@
-from enum import IntEnum
+import datetime
 from mysql.connector import connect, pooling
 from typing import List, Dict
 import uuid
 
 from waterflow.task import Task, TaskEligibilityState, TaskExecState
 import waterflow.task
+from waterflow.job import JobExecutionState, FetchDagTask, Dag
 
 WORKER_LENGTH = 255  # must match the varchar length in the db schema
 
-class JobExecutionState(IntEnum):  # enum b/c its pythonic (though stupid)
-    # PENDING = 0
-    DAG_FETCH = 1
-    RUNNING = 2
-    SUCCEEDED = 3
-    FAILED = 4
+# format string for datetime.strftime() for Mysql's DATETIME column
+DATETIME_COL_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 class DagDao:
+    ALL_TABLES = ['job_executions', 'jobs', 'task_deps', 'task_executions', 'tasks']
+
     def __init__(self, mysql_conn_pool, dbname):
         self.conn_pool = mysql_conn_pool
         self.dbname = dbname  # to check table existence
+
 
 
     def query(self):  # TODO remove
@@ -32,20 +32,47 @@ class DagDao:
         """
         Connects to the Database and ensures that tables with the right names exist.
         """
-        EXPECTED_TABLES = ['job_executions', 'jobs', 'task_deps', 'task_executions', 'tasks']
 
         sql = f"""
         select table_name from information_schema.tables
         where table_schema = "{self.dbname}"
-        and table_name in ({",".join(["%s" for _ in EXPECTED_TABLES])})
-        ;
+        and table_name in ({",".join(["%s" for _ in DagDao.ALL_TABLES])});
         """
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(sql, tuple(EXPECTED_TABLES))
+                cursor.execute(sql, tuple(DagDao.ALL_TABLES))
                 results = [row[0] for row in cursor.fetchall()]
 
-        return sorted(results) == sorted(EXPECTED_TABLES)
+        return sorted(results) == sorted(DagDao.ALL_TABLES)
+
+    def count_jobs(self, job_state) -> int:
+        if job_state == int(JobExecutionState.PENDING):
+            sql = """select count(*) from jobs
+            left join job_executions on jobs.job_id = job_executions.job_id where job_executions.job_id is NULL;
+            """
+        elif job_state == int(JobExecutionState.DAG_FETCH):
+            sql = """select count(*) from jobs
+            left join job_executions on jobs.job_id = job_executions.job_id
+            WHERE job_executions.job_id is NOT NULL and job_executions.state = 1
+            """  # DAG_FETCH is 1
+        elif job_state == int(JobExecutionState.RUNNING):
+            raise Exception("Not Implemented Yet")
+        elif job_state == int(JobExecutionState.FAILED):
+            raise Exception("Not Implemented Yet")
+        elif job_state == int(JobExecutionState.SUCCEEDED):
+            raise Exception("Not Implemented Yet")
+
+
+        with self.conn_pool.get_connection() as conn:
+            with conn.cursor() as cursor:
+
+                cursor.execute(sql)
+                rows = cursor.fetchall()
+                return rows[0][0]
+
+
+
+
 
     def add_job(self, job_input64: str):
         """
@@ -63,43 +90,68 @@ class DagDao:
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, params=(job_id, job_input64))
-                # works: print(f"last row id: {cursor.lastrowid}")
                 conn.commit()  # required
 
         return job_id
 
-    def start_job(self, job_id: str, worker: str):
+    def get_and_start_jobs(self, workers: List[str], now_utc=None) -> List[FetchDagTask]:
         """
-        Called when a worker started fetching the dag for a job.
+        Called to get fetch-dag tasks for workers, which starts a job.
 
         Inserts the job_execution row and marks which worker is working on it
 
         TODO:  need another method for if the worker times out and we try again (or is that just a re-run????)
         """
-        sql = """
-        insert into job_executions (job_id, state, worker, dag)
-        values (%s, %s, %s, NULL);
-        """
+        now_utc = now_utc or datetime.datetime.utcnow()
+
+        # TODO add a work_queue column!
 
         # TODO add created_utc and last_updated_utc columns!
 
-        if len(worker) > WORKER_LENGTH:
-            raise ValueError(f"worker cannot be longer than {WORKER_LENGTH}")
+        for worker in workers:
+            if len(worker) > WORKER_LENGTH:
+                raise ValueError(f"worker cannot be longer than {WORKER_LENGTH}")
 
-        params = (job_id, int(JobExecutionState.DAG_FETCH), worker)
+        jobs = []
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(sql, params=params)
+                fetch_sql = """
+                SELECT jobs.job_id, jobs.job_input
+                FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
+                WHERE job_executions.job_id is NULL
+                LIMIT %s
+                """
+                cursor.execute(fetch_sql, params=(len(workers),))
+                rows = cursor.fetchall()
+                for i, row in enumerate(rows):
+                    jobs.append(FetchDagTask(job_id=row[0], job_input64=row[1], worker=workers[i]))
+
+                sql = """
+                        insert into job_executions (job_id, created_utc, state, worker, dag)
+                        values (%s, %s, %s, %s, NULL);
+                        """
+                for fetch_task in jobs:
+                    params = (fetch_task.job_id, now_utc.strftime(DATETIME_COL_FORMAT), int(JobExecutionState.DAG_FETCH), fetch_task.worker)
+                    cursor.execute(sql, params=params)
                 conn.commit()
 
-    def set_dag(self, job_id: str, dag64: str, tasks: List[Task], task_deps: Dict[str, List[str]]):
+        return jobs
+
+    #def set_dag(self, job_id: str, dag64: str, tasks: List[Task], task_deps: Dict[str, List[str]]):
+    def set_dag(self, job_id: str, dag: Dag):
         """
         Called when worker has finished fetching the dag.
+
+        Q:  why are both dag64 and tasks specified?  why not only specify dag64?
+        A:  the DAO shouldn't own the format of the DAG bytes
         """
-        if not isinstance(dag64, str):
+
+        # TODO if the dag is invalid, we need to set it anyway and fail the job
+
+        if not isinstance(dag.raw_dag64, str):
             raise ValueError("dag64 must be a str; if you have bytes call .decode(UTF-8)")
 
-        if not waterflow.task.is_valid(tasks, task_deps):
+        if not waterflow.task.is_valid(dag.tasks, dag.adj_list):
             raise ValueError("invalid task graph")
 
         with self.conn_pool.get_connection() as conn:
@@ -109,15 +161,14 @@ class DagDao:
                 set dag=FROM_BASE64(%s), state=(%s)
                 where job_id = %s AND state = %s AND dag IS NULL;
                 """
-                params = (dag64, int(JobExecutionState.RUNNING), job_id, int(JobExecutionState.DAG_FETCH))
+                params = (dag.raw_dag64, int(JobExecutionState.RUNNING), job_id, int(JobExecutionState.DAG_FETCH))
                 cursor.execute(sql, params=params)
-
 
                 sql = """
                 insert into `tasks` (job_id, task_id, eligibility_state, task_input)
                 values (%s, %s, %s, %s);
                 """
-                for task in tasks:
+                for task in dag.tasks:
                     params = (job_id, task.task_id, int(TaskEligibilityState.BLOCKED), task.input64)
                     cursor.execute(sql, params=params)
 
@@ -125,7 +176,7 @@ class DagDao:
                 INSERT INTO `task_deps` (job_id, task_id, neighboor_id)
                 VALUES (%s, %s, %s);
                 """
-                for task_id, deps in task_deps.items():
+                for task_id, deps in dag.adj_list.items():
                     for neighboor_id in deps:
                         params = (job_id, task_id, neighboor_id)
                         cursor.execute(sql, params=params)

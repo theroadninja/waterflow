@@ -20,9 +20,12 @@ class TaskExecState(IntEnum):
 
 @dataclass
 class Task:
+    """
+    Internal class that is only used to pass info to the DAO.  See also job.py:Dag
+    """
     # job_id: str
-    task_id: str
-    state: int
+    task_id: str  # TODO this class is internal because external caller won't know the task ids ahead of time
+    # state: int
     input64: str
 
 def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename to check_valid and throw exceptions instead
@@ -31,7 +34,13 @@ def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename 
     """
     # TODO write unit test
 
+
+    # TODO what about dags with only one tasks, or multiple unconnected tasks????
+
     task_ids = set([task.task_id for task in tasks])
+
+    if len(task_ids) < 1:
+        raise ValueError("DAG must have at least one task")
 
     # TODO make sure task list does not have duplicates
 
