@@ -1,6 +1,7 @@
 from dataclasses import dataclass
+import datetime
 from enum import IntEnum
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from .task import Task
 
@@ -26,3 +27,15 @@ class Dag:
     raw_dagv: int  # version for the serialization of the dag
     tasks: Task
     adj_list: Dict[str, List[str]]
+
+@dataclass
+class JobView1:  # TODO not sure what the final form will be
+    """
+    Only used for pulling info out of the DB about a job
+    """
+    job_id: str
+    job_input64: str
+    created_utc: datetime.datetime
+    state: Optional[int]
+    worker: Optional[str]
+    dag64: Optional[str]

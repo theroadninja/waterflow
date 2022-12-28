@@ -7,6 +7,7 @@
 CREATE TABLE IF NOT EXISTS jobs (
     job_id VARCHAR(32) NOT NULL,   -- uuid without dashes
     PRIMARY KEY (job_id),
+    created_utc DATETIME NOT NULL,
     job_input BLOB   -- 16 MB
 );
 
