@@ -8,7 +8,7 @@ import waterflow
 from waterflow import to_base64_str
 from waterflow.job import JobExecutionState, Dag
 from waterflow.dao import DagDao
-from waterflow.task import Task, TaskEligibilityState, TaskExecState
+from waterflow.task import Task, TaskState
 
 UNIT_TEST_DATABASE = "waterflow_unit_tests"
 
@@ -160,6 +160,33 @@ class DaoTests(unittest.TestCase):
             self.assertTrue(count_table(conn, "tasks") == 0)
             self.assertTrue(count_table(conn, "task_deps") == 0)
 
+    def _assert_tasks_in_state(self, expected_state, tasks):
+        for task in tasks:
+            self.assertEqual(expected_state, task.state)
+
+    def test_update_task_deps(self):
+        # TODO - just manually insert the correct entries in the DB!
+        conn_pool = get_conn_pool()
+        dao = DagDao(conn_pool, "waterflow")
+        PENDING = int(JobExecutionState.PENDING)
+        FETCHING = int(JobExecutionState.DAG_FETCH)
+
+        self.assertEqual(0, dao.count_jobs(PENDING))
+        job_id = dao.add_job(job_input64=waterflow.to_base64_str("dep_test"))
+        print(f"test_update_task_deps job_id={job_id}")
+
+        dao.get_and_start_jobs(["w0"])
+        dao.set_dag(job_id, make_test_dag())
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_tasks_in_state(int(TaskState.BLOCKED), job_tasks.values())
+        dao.update_task_deps(job_id)
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_tasks_in_state(int(TaskState.BLOCKED), [job_tasks["A"], job_tasks["B"], job_tasks["C"]])
+        self._assert_tasks_in_state(int(TaskState.PENDING), [job_tasks["D"]]) #, job_tasks["E"], job_tasks["F"]])
+
+
+
+
 
 
     def test_job_execution(self):
@@ -187,12 +214,12 @@ class DaoTests(unittest.TestCase):
         self.assertTrue(6, len(job0_tasks))
         self.assertTrue(job0, job0_tasks["A"].job_id)
         self.assertTrue(32, len(job0_tasks["A"].task_id))
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["A"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["B"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["C"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["D"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["E"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["F"].eligibility_state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["B"].state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["C"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["D"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["E"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["F"].state)
 
         #     def stop_task(self, job_id, task_id, end_state: int):
 
@@ -204,93 +231,76 @@ class DaoTests(unittest.TestCase):
         dao.update_task_deps(job0)
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
         self.assertTrue(6, len(job0_tasks))
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["A"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["B"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["C"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["D"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["E"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["F"].eligibility_state)
-        self.assertIsNotNone(job0_tasks["D"].exec_state)
-        self.assertEqual(int(TaskExecState.RUNNING), job0_tasks["D"].exec_state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["B"].state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["C"].state)
+        self.assertEqual(int(TaskState.RUNNING), job0_tasks["D"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["E"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["F"].state)
 
-        dao.stop_task(job0, task_id=job0_tasks["D"].task_id, end_state=int(TaskExecState.SUCCEEDED))
+        dao.stop_task(job0, task_id=job0_tasks["D"].task_id, end_state=int(TaskState.SUCCEEDED))
         dao.update_task_deps(job0)
 
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
         self.assertTrue(6, len(job0_tasks))
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["A"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["B"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["C"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["D"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["E"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["F"].eligibility_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["D"].exec_state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["B"].state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["C"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["D"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["E"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["E"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["E"].task_id, end_state=int(TaskExecState.SUCCEEDED))
+        dao.stop_task(job0, task_id=job0_tasks["E"].task_id, end_state=int(TaskState.SUCCEEDED))
         dao.update_task_deps(job0)
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["A"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["B"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["C"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["D"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["E"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["F"].eligibility_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["D"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["E"].exec_state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["B"].state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["C"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["D"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["E"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["F"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["F"].task_id, end_state=int(TaskExecState.SUCCEEDED))
+        dao.stop_task(job0, task_id=job0_tasks["F"].task_id, end_state=int(TaskState.SUCCEEDED))
         dao.update_task_deps(job0)
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["A"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["B"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["C"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["D"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["E"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["F"].eligibility_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["D"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["E"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["F"].exec_state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["B"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["C"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["D"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["E"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["B"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["B"].task_id, end_state=int(TaskExecState.SUCCEEDED))
+        dao.stop_task(job0, task_id=job0_tasks["B"].task_id, end_state=int(TaskState.SUCCEEDED))
         dao.update_task_deps(job0)
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
-        self.assertEqual(int(TaskEligibilityState.BLOCKED), job0_tasks["A"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["B"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["C"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["D"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["E"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["F"].eligibility_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["D"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["E"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["F"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["B"].exec_state)
+        self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["B"].state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["C"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["D"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["E"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["C"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["C"].task_id, end_state=int(TaskExecState.SUCCEEDED))
+        dao.stop_task(job0, task_id=job0_tasks["C"].task_id, end_state=int(TaskState.SUCCEEDED))
         dao.update_task_deps(job0)
         self.assertFalse(dao.update_job_state(job0))
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["A"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["B"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["C"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["D"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["E"].eligibility_state)
-        self.assertEqual(int(TaskEligibilityState.READY), job0_tasks["F"].eligibility_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["D"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["E"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["F"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["B"].exec_state)
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["C"].exec_state)
+        self.assertEqual(int(TaskState.PENDING), job0_tasks["A"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["B"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["C"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["D"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["E"].state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["A"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["A"].task_id, end_state=int(TaskExecState.SUCCEEDED))
+        dao.stop_task(job0, task_id=job0_tasks["A"].task_id, end_state=int(TaskState.SUCCEEDED))
         dao.update_task_deps(job0)
         self.assertTrue(dao.update_job_state(job0))
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
-        self.assertEqual(int(TaskExecState.SUCCEEDED), job0_tasks["A"].exec_state)
+        self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["A"].state)
 
         job = dao.get_job_info(job0)
         self.assertIsNotNone(job.created_utc)
@@ -302,7 +312,6 @@ class DaoTests(unittest.TestCase):
             self.assertTrue(count_table(conn, "job_executions") > 0)
             self.assertTrue(count_table(conn, "tasks") > 0)
             self.assertTrue(count_table(conn, "task_deps") > 0)
-            self.assertTrue(count_table(conn, "task_executions") > 0)
 
             with conn.cursor() as cursor:
                 cursor.execute("delete from jobs")
@@ -312,7 +321,6 @@ class DaoTests(unittest.TestCase):
             self.assertTrue(count_table(conn, "job_executions") == 0)
             self.assertTrue(count_table(conn, "tasks") == 0)
             self.assertTrue(count_table(conn, "task_deps") == 0)
-            self.assertTrue(count_table(conn, "task_executions") == 0)
 
 
 
@@ -320,3 +328,4 @@ class DaoTests(unittest.TestCase):
     def test_linear_task_fetch(self):
         pass
         # TODO make a linear graph with A->B->C->D->E etc...
+        # TODO also need tests for task failure, cancelation, etc

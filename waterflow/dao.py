@@ -3,7 +3,7 @@ from mysql.connector import connect, pooling
 from typing import List, Dict
 import uuid
 
-from waterflow.task import Task, TaskEligibilityState, TaskExecState, TaskView1
+from waterflow.task import Task, TaskState, TaskExecState, TaskView1, TaskAssignment
 import waterflow.task
 from waterflow.job import JobExecutionState, FetchDagTask, Dag, JobView1
 
@@ -13,7 +13,7 @@ WORKER_LENGTH = 255  # must match the varchar length in the db schema
 DATETIME_COL_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 class DagDao:
-    ALL_TABLES = ['job_executions', 'jobs', 'task_deps', 'task_executions', 'tasks']
+    ALL_TABLES = ['job_executions', 'jobs', 'task_deps', 'tasks']
 
     def __init__(self, mysql_conn_pool, dbname):
         self.conn_pool = mysql_conn_pool
@@ -140,9 +140,8 @@ class DagDao:
 
     def get_tasks_by_job(self, job_id) -> List[Task]:
         sql = """
-        select tasks.task_id, tasks.eligibility_state, TO_BASE64(tasks.task_input), task_executions.exec_state, 
-        task_executions.worker
-        FROM tasks LEFT JOIN task_executions on tasks.task_id = task_executions.task_id
+        select tasks.task_id, tasks.state, TO_BASE64(tasks.task_input), tasks.worker
+        FROM tasks
         WHERE tasks.job_id = %s
         """
         tasks = []
@@ -151,7 +150,8 @@ class DagDao:
                 cursor.execute(sql, params=(job_id,))
                 rows = cursor.fetchall()
                 for row in rows:
-                    tasks.append(TaskView1(job_id, row[0], row[1], row[2], row[3], row[4]))
+                    task_id, state, task_input, worker = row
+                    tasks.append(TaskView1(job_id, task_id, state, task_input, worker))
                 return tasks
 
 
@@ -200,13 +200,14 @@ class DagDao:
         return jobs
 
     #def set_dag(self, job_id: str, dag64: str, tasks: List[Task], task_deps: Dict[str, List[str]]):
-    def set_dag(self, job_id: str, dag: Dag):
+    def set_dag(self, job_id: str, dag: Dag, now_utc: datetime.datetime = None):
         """
         Called when worker has finished fetching the dag.
 
         Q:  why are both dag64 and tasks specified?  why not only specify dag64?
         A:  the DAO shouldn't own the format of the DAG bytes
         """
+        now_utc = now_utc or datetime.datetime.utcnow()
 
         # TODO if the dag is invalid, we need to set it anyway and fail the job
 
@@ -226,12 +227,29 @@ class DagDao:
                 params = (dag.raw_dag64, int(JobExecutionState.RUNNING), job_id, int(JobExecutionState.DAG_FETCH))
                 cursor.execute(sql, params=params)
 
+                # sql = """
+                # insert into `tasks` (job_id, task_id, eligibility_state, task_input)
+                # values (%s, %s, %s, FROM_BASE64(%s));
+                # """
+                # for task in dag.tasks:
+                #     params = (job_id, task.task_id, int(TaskEligibilityState.BLOCKED), task.input64)
+                #     cursor.execute(sql, params=params)
+                #
+                # sql = """
+                # INSERT INTO `task_deps` (job_id, task_id, neighboor_id)
+                # VALUES (%s, %s, %s);
+                # """
+                # for task_id, deps in dag.adj_list.items():
+                #     for neighboor_id in deps:
+                #         params = (job_id, task_id, neighboor_id)
+                #         cursor.execute(sql, params=params)
+
                 sql = """
-                insert into `tasks` (job_id, task_id, eligibility_state, task_input)
-                values (%s, %s, %s, FROM_BASE64(%s));
+                insert into `tasks` (job_id, task_id, created_utc, state, task_input, worker)
+                values (%s, %s, %s, 0, FROM_BASE64(%s), NULL);
                 """
                 for task in dag.tasks:
-                    params = (job_id, task.task_id, int(TaskEligibilityState.BLOCKED), task.input64)
+                    params = (job_id, task.task_id, now_utc.strftime(DATETIME_COL_FORMAT), task.input64)
                     cursor.execute(sql, params=params)
 
                 sql = """
@@ -243,6 +261,7 @@ class DagDao:
                         params = (job_id, task_id, neighboor_id)
                         cursor.execute(sql, params=params)
 
+
                 conn.commit()
                 # prints last call, not the whole transaction: print(f"rows updated: {cursor.rowcount}")
 
@@ -253,6 +272,7 @@ class DagDao:
         See also:  update_job_state()
         """
 
+        # NOTE this is very old
         SAVE_ME_SOMEWHERE = """
         select tasks.job_id, tasks.task_id, tasks.eligibility_state, 
         cast(from_base64(tasks.task_input) as char(255)) as input, 
@@ -268,37 +288,53 @@ class DagDao:
         ;
         """
 
+        ANOTHER_ONE = """
+        select tasks.task_id,  tasks.state,
+        COUNT(task_deps.neighboor_id) as depcount,
+        COUNT(IF(tasks2.state = 4,1,NULL)) as donecount
+        from tasks left join task_deps on tasks.task_id = task_deps.task_id
+        left join `tasks` `tasks2` on task_deps.neighboor_id = tasks2.task_id
+        where tasks.job_id = "eb4be85d0eb7449bbffa7bd2cb0c404e" and tasks.state = 0
+        group by tasks.task_id, tasks.state
+        """
+
         # find blocked tasks that can be switched to ready
         # this is useful for troubleshooting:  cast(from_base64(tasks.task_input) as char(255)) as input,
         # WARNING:  don't filter task_executions.exec_state in the where clause!
         ready_sql = """
         select tasks.task_id,  
         COUNT(task_deps.neighboor_id) as depcount,
-        COUNT(task_executions.task_id) as donecount
+        COUNT(IF(tasks2.state = 4,1,NULL)) as donecount
         from tasks left join task_deps on tasks.task_id = task_deps.task_id
-        left join task_executions on task_deps.neighboor_id = task_executions.task_id
-        where tasks.job_id = %s and tasks.eligibility_state = %s and (task_executions.exec_state IS NULL OR task_executions.exec_state = %s)
+        left join `tasks` `tasks2` on task_deps.neighboor_id = tasks2.task_id
+        where tasks.job_id = %s and tasks.state = 0
         group by tasks.task_id
         having depcount = donecount
         """
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
-                params = (job_id, int(TaskEligibilityState.BLOCKED), int(TaskExecState.SUCCEEDED))
+
+                conn.start_transaction(readonly=False)
+
+                params = (job_id,)
                 cursor.execute(ready_sql, params)
                 rows = cursor.fetchall()
 
                 task_ids = [row[0] for row in rows]
+                print(f"found task ids: {task_ids}")
 
                 if len(task_ids) > 0:
                     markers = ",".join(["%s"] * len(task_ids))
                     update_sql = f"""
-                    UPDATE `tasks` SET tasks.eligibility_state = %s
-                    WHERE tasks.job_id = %s and tasks.eligibility_state = %s and tasks.task_id in ({markers});
+                    UPDATE `tasks` SET tasks.state = 1
+                    WHERE tasks.job_id = %s and tasks.state = 0 and tasks.task_id in ({markers});
                     """
-                    params = (int(TaskEligibilityState.READY), job_id,  int(TaskEligibilityState.BLOCKED)) + tuple(task_ids)
+                    params = (job_id,) + tuple(task_ids)
                     cursor.execute(update_sql, params)
                     # print(f"update_task_deps() {cursor.rowcount} rows updated")
-                    conn.commit()
+
+                # end the transaction either way
+                conn.commit()  # TODO do we need a try catch to rollback?  probably not b/c last op is the write
 
 
     def update_job_state(self, job_id):  #a.k.a. "all tasks succeeded"
@@ -311,15 +347,14 @@ class DagDao:
         """
         sql = """
         select tasks.job_id, count(*) as unfinished_count from tasks
-        left join task_executions on tasks.task_id = task_executions.task_id
-        where tasks.job_id = %s and (exec_state IS NULL OR exec_state != %s)
+        where tasks.job_id = %s and tasks.state != 4
         group by tasks.job_id;
         """
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
 
                 # Need two queries because MYSQL doesnt like UPDATES that use GROUP BYs
-                cursor.execute(sql, params=(job_id, int(TaskExecState.SUCCEEDED)))
+                cursor.execute(sql, params=(job_id,))
                 rows = cursor.fetchall()
                 if len(rows) > 1:
                     raise Exception(f"expected 0 or 1 rows for job {job_id} but got {len(rows)}")
@@ -372,8 +407,15 @@ class DagDao:
         pass # TODO wont actually be implemented completely in the dao...will it?
 
 
+    def get_and_start_tasks(self, workers: List[str]) -> List[TaskAssignment]:
+        # a task with no task_execution row or a task_execution row marked as PENDING
+        # TODO - might be a good reason to combine the two states?
+        pass
+
+
     def start_task(self, job_id, task_id, worker):
         """
+        Starts an individual task -- mostly for testing.
         Called when a task is assigned to a worker
 
         TODO this does not check if the task can be started -- probably dont want to expose this one (use it only for testing)
@@ -384,29 +426,55 @@ class DagDao:
         if not isinstance(task_id, str):
             raise ValueError("task_id must be a str")
 
+        # sql = """
+        # INSERT INTO `task_executions` (job_id, task_id, exec_state, worker)
+        # VALUES (%s, %s, %s, %s)
+        # """
+        # params = (job_id, task_id, int(TaskExecState.RUNNING), worker)
+        # with self.conn_pool.get_connection() as conn:
+        #     with conn.cursor() as cursor:
+        #         cursor.execute(sql, params=params)
+        #         if cursor.rowcount != 1:
+        #             raise Exception(f"rowcount was {cursor.rowcount}")
+        #     conn.commit()
+
         sql = """
-        INSERT INTO `task_executions` (job_id, task_id, exec_state, worker)
-        VALUES (%s, %s, %s, %s)
+        UPDATE tasks
+        set tasks.state = 3, tasks.worker = %s
+        where tasks.job_id = %s AND tasks.task_id = %s and tasks.state = 1;
         """
-        params = (job_id, task_id, int(TaskExecState.RUNNING), worker)
+        params = (worker, job_id, task_id)
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, params=params)
                 if cursor.rowcount != 1:
-                    raise Exception(f"rowcount was {cursor.rowcount}")
+                    raise Exception(f"rowcount was {cursor.rowcount} for task_id={task_id}")
             conn.commit()
 
     def stop_task(self, job_id, task_id, end_state: int):
-        if end_state not in [int(TaskExecState.FAILED), int(TaskExecState.SUCCEEDED)]:
+        if end_state not in [int(TaskState.FAILED), int(TaskState.SUCCEEDED)]:
             raise ValueError(f"Invalid end state: {end_state}")
 
+        # sql = """
+        # UPDATE `task_executions`
+        # SET exec_state = %s
+        # WHERE job_id = %s AND task_id = %s AND exec_state = %s;
+        # """
+        # # TODO option to override? maybe only for succeeded though - dont want them to flip succeeded to failed
+        # params = (end_state, job_id, task_id, int(TaskExecState.RUNNING))
+        # with self.conn_pool.get_connection() as conn:
+        #     with conn.cursor() as cursor:
+        #         cursor.execute(sql, params=params)
+        #         if cursor.rowcount != 1:
+        #             raise Exception(f"rowcount was {cursor.rowcount}")
+        #     conn.commit()
+
         sql = """
-        UPDATE `task_executions`
-        SET exec_state = %s
-        WHERE job_id = %s AND task_id = %s AND exec_state = %s;
+        UPDATE `tasks`
+        SET state = %s
+        WHERE job_id = %s AND task_id = %s and state = %s;
         """
-        # TODO option to override? maybe only for succeeded though - dont want them to flip succeeded to failed
-        params = (end_state, job_id, task_id, int(TaskExecState.RUNNING))
+        params = (end_state, job_id, task_id, int(TaskState.RUNNING))
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, params=params)

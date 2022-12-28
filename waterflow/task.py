@@ -18,6 +18,18 @@ class TaskExecState(IntEnum):
     SUCCEEDED = 2
     FAILED = 3
 
+class TaskState(IntEnum):
+    """
+    New global state meant to replace TaskEligibilityState and TaskExecState
+    """
+    BLOCKED = 0
+    PENDING = 1
+    PAUSED = 2
+    RUNNING = 3
+    SUCCEEDED = 4
+    FAILED = 5
+
+
 @dataclass
 class TaskExecution:
     pass
@@ -35,12 +47,22 @@ class Task:
     execution: Optional[TaskExecution] = None
 
 @dataclass
+class TaskAssignment:
+    """
+    Data type returned to worker to tell it to run a task
+    """
+    job_id: str
+    task_id: str
+    task_input64: str
+    # TODO "service_pointer64" goes here!
+
+
+@dataclass
 class TaskView1:  # TODO not sure what the final form will be
     job_id: str
     task_id: str
-    eligibility_state: int
+    state: int
     task_input64: str
-    exec_state: Optional[int]
     worker: Optional[str]
 
 
