@@ -10,7 +10,7 @@ from waterflow.job import JobExecutionState, FetchDagTask, Dag, JobView1
 WORKER_LENGTH = 255  # must match the varchar length in the db schema
 
 # the max # of workers the DAO itself will let you assign in a single call (just to have testable limits)
-MAX_WORKER_ASSIGN = 64  # this does not mean the API call is limited to 64.
+MAX_WORKER_ASSIGN = 1024  # this does not mean the API call is limited to 64.
 
 # TODO remember to perf test using task_deps.job_id in a where clause - does that improve perf?  (useful for delete cascae either way)
 
@@ -323,7 +323,6 @@ class DagDao:
                 rows = cursor.fetchall()
 
                 task_ids = [row[0] for row in rows]
-                print(f"found task ids: {task_ids}")
 
                 if len(task_ids) > 0:
                     markers = self._markers(len(task_ids)) # markers = ",".join(["%s"] * len(task_ids))
@@ -481,6 +480,13 @@ class DagDao:
             conn.commit()
 
     def stop_task(self, job_id, task_id, end_state: int):
+        try:
+            # isisntance(int) will claim an IntEnum is an int, but it will still fail in mysql.
+            # so juch smash whatever we get into an int
+            end_state = int(end_state)
+        except ValueError:
+            raise ValueError(f"end_state is wrong type: {end_state}")
+
         if end_state not in [int(TaskState.FAILED), int(TaskState.SUCCEEDED)]:
             raise ValueError(f"Invalid end state: {end_state}")
 

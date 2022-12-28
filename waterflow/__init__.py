@@ -28,6 +28,6 @@ def get_connection_pool(dbconf, pool_name):
         password=dbconf.password,
     )
 
-def get_connection_pool_from_file(filename, pool_name):
+def get_connection_pool_from_file(filename, pool_name="waterflow_dao"):
     dbconf = MysqlConfig.from_file(filename)
     return get_connection_pool(dbconf, pool_name)

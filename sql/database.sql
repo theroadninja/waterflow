@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 
     PRIMARY KEY (task_id),
     CONSTRAINT uc_id UNIQUE (job_id, task_id),
-    FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
+    FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
+    INDEX (state)
 );
 
 CREATE TABLE IF NOT EXISTS task_deps (

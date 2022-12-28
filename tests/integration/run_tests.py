@@ -6,29 +6,19 @@ import waterflow
 from waterflow import to_base64_str
 import waterflow.dao
 from waterflow.job import Dag
-from waterflow.task import Task, TaskEligibilityState, TaskExecState
+from waterflow.task import Task, TaskState
 from waterflow.mysql_config import MysqlConfig
 import uuid
 
 
 
-def get_conn_pool():
-    dbconf = MysqlConfig.from_file("../../local/mysqlconfig.json")
-    return waterflow.get_connection_pool(dbconf, "waterflow_dao")
-
-
-
-
-
+# def get_conn_pool():
+#     dbconf = MysqlConfig.from_file("../../local/mysqlconfig.json")
+#     return waterflow.get_connection_pool(dbconf, "waterflow_dao")
 
 if __name__ == "__main__":
-    from getpass import getpass   # pycharm: run -> edit configurations -> emulate terminal in output console
-    import json
-    import os
-
-    conn_pool = get_conn_pool()
-    conn_pool.get_connection()
-    # conn = connect(host="localhost", user=username, password=pwd, database="waterflow")
+    # note: from getpass import getpass   # pycharm: run -> edit configurations -> emulate terminal in output console
+    conn_pool = waterflow.get_connection_pool_from_file("../../local/mysqlconfig.json", "waterflow_dao")
     dao = waterflow.dao.DagDao(conn_pool, "waterflow")
 
     job_input = waterflow.to_base64_str("abc")
@@ -52,13 +42,13 @@ if __name__ == "__main__":
     task_adj = {
         task1: [task2, task3],
         task4: [task1],
-
     }
 
     dao.set_dag(job_id, Dag(waterflow.to_base64_str("def"), 0, tasks=tasks, adj_list=task_adj))
+    dao.update_task_deps(job_id)
 
     dao.start_task(job_id, task3, "worker1")
     dao.start_task(job_id, task2, "worker1")
-    dao.stop_task(job_id, task3, int(TaskExecState.SUCCEEDED))
-    dao.stop_task(job_id, task2, int(TaskExecState.SUCCEEDED))
+    dao.stop_task(job_id, task3, int(TaskState.SUCCEEDED))
+    dao.stop_task(job_id, task2, int(TaskState.SUCCEEDED))
     dao.update_task_deps(job_id)
