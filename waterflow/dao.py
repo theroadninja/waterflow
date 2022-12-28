@@ -9,6 +9,11 @@ from waterflow.job import JobExecutionState, FetchDagTask, Dag, JobView1
 
 WORKER_LENGTH = 255  # must match the varchar length in the db schema
 
+# the max # of workers the DAO itself will let you assign in a single call (just to have testable limits)
+MAX_WORKER_ASSIGN = 64  # this does not mean the API call is limited to 64.
+
+# TODO remember to perf test using task_deps.job_id in a where clause - does that improve perf?  (useful for delete cascae either way)
+
 # format string for datetime.strftime() for Mysql's DATETIME column
 DATETIME_COL_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -44,6 +49,11 @@ class DagDao:
                 results = [row[0] for row in cursor.fetchall()]
 
         return sorted(results) == sorted(DagDao.ALL_TABLES)
+
+    def _markers(self, n):  # TODO unit test this
+        if n < 1:
+            raise ValueError("n must be >= 1")
+        return ",".join(["%s"] * n)
 
     def count_jobs(self, job_state) -> int:
         if job_state == int(JobExecutionState.PENDING):
@@ -124,23 +134,10 @@ class DagDao:
                 else:
                     raise Exception(f"cannot find job {job_id}")
 
-        # TODO finish
-
-
-        # class JobView1:  # TODO not sure what the final form will be
-        #     """
-        #     Only used for pulling info out of the DB about a job
-        #     """
-        #     job_id: str
-        #     job_input64: str
-        #     created_utc: datetime
-        #     state: Optional[int]
-        #     worker: Optional[str]
-        #     dag64: Optional[str]
 
     def get_tasks_by_job(self, job_id) -> List[Task]:
         sql = """
-        select tasks.task_id, tasks.state, TO_BASE64(tasks.task_input), tasks.worker
+        select tasks.task_id, tasks.state, TO_BASE64(tasks.task_input)
         FROM tasks
         WHERE tasks.job_id = %s
         """
@@ -150,10 +147,17 @@ class DagDao:
                 cursor.execute(sql, params=(job_id,))
                 rows = cursor.fetchall()
                 for row in rows:
-                    task_id, state, task_input, worker = row
-                    tasks.append(TaskView1(job_id, task_id, state, task_input, worker))
+                    task_id, state, task_input = row
+                    tasks.append(TaskView1(job_id, task_id, state, task_input))
                 return tasks
 
+
+    def _check_worker_args(self, workers):
+        if len(workers) > MAX_WORKER_ASSIGN:
+            raise ValueError(f"cannot assign more than {MAX_WORKER_ASSIGN} workers in one transaction")
+        for worker in workers:
+            if len(worker) > WORKER_LENGTH:
+                raise ValueError(f"worker cannot be longer than {WORKER_LENGTH}")
 
     # a.k.a. get_work_1()
     def get_and_start_jobs(self, workers: List[str], now_utc=None) -> List[FetchDagTask]:
@@ -170,9 +174,7 @@ class DagDao:
 
         # TODO add created_utc and last_updated_utc columns!
 
-        for worker in workers:
-            if len(worker) > WORKER_LENGTH:
-                raise ValueError(f"worker cannot be longer than {WORKER_LENGTH}")
+        self._check_worker_args(workers)  # TODO unit test this being enforced
 
         jobs = []
         with self.conn_pool.get_connection() as conn:
@@ -245,8 +247,8 @@ class DagDao:
                 #         cursor.execute(sql, params=params)
 
                 sql = """
-                insert into `tasks` (job_id, task_id, created_utc, state, task_input, worker)
-                values (%s, %s, %s, 0, FROM_BASE64(%s), NULL);
+                insert into `tasks` (job_id, task_id, created_utc, state, task_input)
+                values (%s, %s, %s, 0, FROM_BASE64(%s));
                 """
                 for task in dag.tasks:
                     params = (job_id, task.task_id, now_utc.strftime(DATETIME_COL_FORMAT), task.input64)
@@ -324,7 +326,7 @@ class DagDao:
                 print(f"found task ids: {task_ids}")
 
                 if len(task_ids) > 0:
-                    markers = ",".join(["%s"] * len(task_ids))
+                    markers = self._markers(len(task_ids)) # markers = ",".join(["%s"] * len(task_ids))
                     update_sql = f"""
                     UPDATE `tasks` SET tasks.state = 1
                     WHERE tasks.job_id = %s and tasks.state = 0 and tasks.task_id in ({markers});
@@ -403,20 +405,59 @@ class DagDao:
     def get_work_1(self):
         pass # actually this is implemented in get_and_start_jobs()
 
-    def get_work_2(self):
+    def get_work_2(self):  # will implement as "get_and_start_tasks()"
         pass # TODO wont actually be implemented completely in the dao...will it?
 
 
     def get_and_start_tasks(self, workers: List[str]) -> List[TaskAssignment]:
-        # a task with no task_execution row or a task_execution row marked as PENDING
-        # TODO - might be a good reason to combine the two states?
-        pass
+        """
+        Called to assign tasks to workers and market them as running.
 
+        TODO - the caller (the service code) will need to call update_deps() for every returned
+        job_id.
+        """
+        self._check_worker_args(workers)  # TODO unit test this being enforced
+
+        # TODO maybe add a table to keep track of what worker has a task? - inserting different workers is probably a massive perf hit
+        # not a log... `task_ownership` -- primary key is task_id, and we do UPSERTs
+
+        with self.conn_pool.get_connection() as conn:
+            with conn.cursor() as cursor:
+
+                conn.start_transaction()
+
+                sql = """
+                select tasks.job_id, tasks.task_id, TO_BASE64(task_input) from tasks
+                where tasks.state = 1 limit %s;
+                """
+                cursor.execute(sql, params=(len(workers),))
+                rows = cursor.fetchall()
+                tasks = [TaskAssignment(job_id, task_id, task_input) for job_id, task_id, task_input in rows]
+                task_ids = [task.task_id for task in tasks]
+
+                if len(task_ids) > 0:
+                    markers = self._markers(len(tasks))
+                    sql = f"""
+                    UPDATE tasks
+                    set tasks.state = 3
+                    where tasks.task_id in ({markers}) and tasks.state = 1;
+                    """
+                    cursor.execute(sql, params=tuple(task_ids))
+                    if cursor.rowcount != len(rows):
+                        raise Exception(f"rowcount: {cursor.rowcount}")  # TODO: proper transaction rollback
+
+                    # TODO and then insert into some kind of `task_ownership` or `task_assignment` table
+
+                conn.commit()
+
+                return tasks
 
     def start_task(self, job_id, task_id, worker):
         """
-        Starts an individual task -- mostly for testing.
+        Starts a specific task -- mostly for testing.
         Called when a task is assigned to a worker
+
+        TODO - maybe this would be useful for an API call where someone instructs a worker to start particular task
 
         TODO this does not check if the task can be started -- probably dont want to expose this one (use it only for testing)
         """
@@ -426,24 +467,12 @@ class DagDao:
         if not isinstance(task_id, str):
             raise ValueError("task_id must be a str")
 
-        # sql = """
-        # INSERT INTO `task_executions` (job_id, task_id, exec_state, worker)
-        # VALUES (%s, %s, %s, %s)
-        # """
-        # params = (job_id, task_id, int(TaskExecState.RUNNING), worker)
-        # with self.conn_pool.get_connection() as conn:
-        #     with conn.cursor() as cursor:
-        #         cursor.execute(sql, params=params)
-        #         if cursor.rowcount != 1:
-        #             raise Exception(f"rowcount was {cursor.rowcount}")
-        #     conn.commit()
-
         sql = """
         UPDATE tasks
-        set tasks.state = 3, tasks.worker = %s
+        set tasks.state = 3
         where tasks.job_id = %s AND tasks.task_id = %s and tasks.state = 1;
         """
-        params = (worker, job_id, task_id)
+        params = (job_id, task_id)
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, params=params)
@@ -454,20 +483,6 @@ class DagDao:
     def stop_task(self, job_id, task_id, end_state: int):
         if end_state not in [int(TaskState.FAILED), int(TaskState.SUCCEEDED)]:
             raise ValueError(f"Invalid end state: {end_state}")
-
-        # sql = """
-        # UPDATE `task_executions`
-        # SET exec_state = %s
-        # WHERE job_id = %s AND task_id = %s AND exec_state = %s;
-        # """
-        # # TODO option to override? maybe only for succeeded though - dont want them to flip succeeded to failed
-        # params = (end_state, job_id, task_id, int(TaskExecState.RUNNING))
-        # with self.conn_pool.get_connection() as conn:
-        #     with conn.cursor() as cursor:
-        #         cursor.execute(sql, params=params)
-        #         if cursor.rowcount != 1:
-        #             raise Exception(f"rowcount was {cursor.rowcount}")
-        #     conn.commit()
 
         sql = """
         UPDATE `tasks`
@@ -483,41 +498,3 @@ class DagDao:
             conn.commit()
 
     # TODO probably want to add some kind of log table for events...like tasks getting force completed...
-
-
-if __name__ == "__main__":
-    from getpass import getpass   # pycharm: run -> edit configurations -> emulate terminal in output console
-    import json
-    import os
-
-    if os.path.isfile("../local/mysqlcreds.json"):
-        with open("../local/mysqlcreds.json") as f:
-            d = json.loads(f.read())
-        username, pwd = d["username"], d["password"]
-    else:
-        pwd = getpass("Password>")
-        username = "root"
-    dbname = "waterflow"
-    host = "localhost"
-
-    conn_pool = pooling.MySQLConnectionPool(
-        pool_name="waterflow_dao",
-        pool_size=5,  # max for mysql?  default is 5
-        pool_reset_session=True,
-        host=host,
-        database=dbname,
-        user=username,
-        password=pwd,
-    )
-    #conn_pool.add_connection()
-
-    conn_pool.get_connection()
-    # conn = connect(host="localhost", user=username, password=pwd, database="waterflow")
-    dao = DagDao(conn_pool, "waterflow")
-    print(dao.query())
-    print(dao.query())
-    print(dao.db_check())
-
-
-
-    # https://realpython.com/python-mysql/

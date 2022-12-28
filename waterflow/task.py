@@ -63,7 +63,6 @@ class TaskView1:  # TODO not sure what the final form will be
     task_id: str
     state: int
     task_input64: str
-    worker: Optional[str]
 
 
 def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename to check_valid and throw exceptions instead
@@ -93,8 +92,16 @@ def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename 
             raise ValueError("adj_list has non-list value")
         task_ids_in_adj.add(node)
         task_ids_in_adj.update(links)
+
+    unknown_ids = task_ids_in_adj - task_ids
+    if unknown_ids:
+        raise ValueError(f"adj list contains unknown ids: {unknown_ids}")
+
     if task_ids != task_ids_in_adj:
-        return False
+        # TODO actualy this could be fine
+        raise ValueError(f"task id mismatch: {task_ids} != {task_ids_in_adj}")
+
+
 
     # TODO detect cycles and other invalid situations!
 

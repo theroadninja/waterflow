@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_utc DATETIME NOT NULL,
     state TINYINT UNSIGNED, -- 0 to 255
     task_input BLOB,
-    worker VARCHAR(255),
 
     PRIMARY KEY (task_id),
     CONSTRAINT uc_id UNIQUE (job_id, task_id),

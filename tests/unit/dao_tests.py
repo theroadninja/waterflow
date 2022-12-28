@@ -50,6 +50,40 @@ def make_test_dag():
     }
     return Dag(to_base64_str("TEST"), 0, tasks, task_adj)
 
+
+def make_linear_test_dag():
+    """
+    A
+     \
+      B
+       \
+        C
+         \
+          D
+           \
+            E
+    """
+    a = waterflow.make_id()
+    b = waterflow.make_id()
+    c = waterflow.make_id()
+    d = waterflow.make_id()
+    e = waterflow.make_id()
+    tasks = [
+        Task(a, input64=to_base64_str("A")),
+        Task(b, input64=to_base64_str("B")),
+        Task(c, input64=to_base64_str("C")),
+        Task(d, input64=to_base64_str("D")),
+        Task(e, input64=to_base64_str("E")),
+    ]
+    task_adj = {
+        a: [b],
+        b: [c],
+        c: [d],
+        d: [e],
+    }
+    return Dag(to_base64_str("TEST"), 0, tasks, task_adj)
+
+
 def task_view1_list_to_dict(results):
     """
     Takes the result of DagDao.get_tasks_by_job() and turns them into a dict where the
@@ -163,6 +197,9 @@ class DaoTests(unittest.TestCase):
     def _assert_tasks_in_state(self, expected_state, tasks):
         for task in tasks:
             self.assertEqual(expected_state, task.state)
+
+    def _assert_blocked(self, tasks):
+        self._assert_tasks_in_state(int(TaskState.BLOCKED), tasks)
 
     def test_update_task_deps(self):
         # TODO - just manually insert the correct entries in the DB!
@@ -322,10 +359,101 @@ class DaoTests(unittest.TestCase):
             self.assertTrue(count_table(conn, "tasks") == 0)
             self.assertTrue(count_table(conn, "task_deps") == 0)
 
-
-
-
     def test_linear_task_fetch(self):
-        pass
-        # TODO make a linear graph with A->B->C->D->E etc...
-        # TODO also need tests for task failure, cancelation, etc
+        """
+        Tests get_and_start_tasks()
+        """
+        conn_pool = get_conn_pool()
+        dao = DagDao(conn_pool, "waterflow")
+
+        job_id = dao.add_job(job_input64=waterflow.to_base64_str("JOB0"))
+        dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
+        dao.set_dag(job_id, make_linear_test_dag())
+        dao.update_task_deps(job_id)
+
+        print(job_id)
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_tasks_in_state(int(TaskState.BLOCKED), [job_tasks["A"], job_tasks["B"], job_tasks["C"], job_tasks["D"]])
+        self._assert_tasks_in_state(int(TaskState.PENDING), [job_tasks["E"]])
+
+        # start task E
+        task_assignments = dao.get_and_start_tasks(["w0"])
+        self.assertEqual(1, len(task_assignments))
+        self.assertEqual("E", base64.b64decode(task_assignments[0].task_input64).decode("UTF-8"))
+
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_blocked([job_tasks["A"], job_tasks["B"], job_tasks["C"], job_tasks["D"]])
+        self._assert_tasks_in_state(int(TaskState.RUNNING), [job_tasks["E"]])
+
+        dao.update_task_deps(job_id)
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_blocked([job_tasks["A"], job_tasks["B"], job_tasks["C"], job_tasks["D"]])
+        self._assert_tasks_in_state(int(TaskState.RUNNING), [job_tasks["E"]])
+
+        # finish task E
+        dao.stop_task(job_id, job_tasks["E"].task_id, int(TaskState.SUCCEEDED))
+        dao.update_task_deps(job_id)
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_blocked([job_tasks["A"], job_tasks["B"], job_tasks["C"]])
+        self._assert_tasks_in_state(int(TaskState.PENDING), [job_tasks["D"]])
+        self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["E"]])
+
+        # start task D
+        task_assignments = dao.get_and_start_tasks(["w0"])
+        self.assertEqual(1, len(task_assignments))
+        self.assertEqual("D", base64.b64decode(task_assignments[0].task_input64).decode("UTF-8"))
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_blocked([job_tasks["A"], job_tasks["B"], job_tasks["C"]])
+        self._assert_tasks_in_state(int(TaskState.RUNNING), [job_tasks["D"]])
+        self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["E"]])
+
+        # finish task D
+        dao.stop_task(job_id, job_tasks["D"].task_id, int(TaskState.SUCCEEDED))
+        dao.update_task_deps(job_id)
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_blocked([job_tasks["A"], job_tasks["B"]])
+        self._assert_tasks_in_state(int(TaskState.PENDING), [job_tasks["C"]])
+        self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["D"], job_tasks["E"]])
+
+        # start task C
+        task_assignments = dao.get_and_start_tasks(["w0"])
+        self.assertEqual(1, len(task_assignments))
+        self.assertEqual("C", base64.b64decode(task_assignments[0].task_input64).decode("UTF-8"))
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_blocked([job_tasks["A"], job_tasks["B"]])
+        self._assert_tasks_in_state(int(TaskState.RUNNING), [job_tasks["C"]])
+        self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["D"], job_tasks["E"]])
+
+        # finish task C
+        dao.stop_task(job_id, job_tasks["C"].task_id, int(TaskState.SUCCEEDED))
+        dao.update_task_deps(job_id)
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_blocked([job_tasks["A"]])
+        self._assert_tasks_in_state(int(TaskState.PENDING), [job_tasks["B"]])
+        self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["C"], job_tasks["D"], job_tasks["E"]])
+
+        # start and finish B
+        task_assignments = dao.get_and_start_tasks(["w0"])
+        dao.stop_task(job_id, job_tasks["B"].task_id, int(TaskState.SUCCEEDED))
+        dao.update_task_deps(job_id)
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_tasks_in_state(int(TaskState.PENDING), [job_tasks["A"]])
+        self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["B"], job_tasks["C"], job_tasks["D"], job_tasks["E"]])
+
+        #start and finish A
+        task_assignments = dao.get_and_start_tasks(["w0"])
+        dao.stop_task(job_id, job_tasks["A"].task_id, int(TaskState.SUCCEEDED))
+        dao.update_task_deps(job_id)
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["A"], job_tasks["B"], job_tasks["C"], job_tasks["D"], job_tasks["E"]])
+
+        # no tasks
+        task_assignments = dao.get_and_start_tasks(["w0"])
+        self.assertEqual(0, len(task_assignments))
+
+        # TODO - test large numbers of workers!  (maybe use multiple linear jobs)
+        # TODO - test trying to mark non-running/non-pending tasks as SUCCEEDED or FAILED, and other invalid transitions
+        #  ( maybe just code up some kind of state model function to check the transitions? )
+
+    # TODO also need tests for task failure, cancelation, etc
+
