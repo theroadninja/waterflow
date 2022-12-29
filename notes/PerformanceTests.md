@@ -4,6 +4,8 @@
 * assigning the max number of workers at once (calling get_and_start_tasks with the maximum number of allowed workers)
 * probably need an index on created_utc column for jobs to efficiently delete old records w/o full table scan
 
+* how many tasks can a single worker run?
+
 ## Single Threaded Tests
 
 Steps:

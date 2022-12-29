@@ -138,7 +138,7 @@ class DagDao:
 
     def get_tasks_by_job(self, job_id) -> List[Task]:
         sql = """
-        select tasks.task_id, tasks.state, TO_BASE64(tasks.task_input)
+        select tasks.task_id, tasks.state, TO_BASE64(tasks.task_input), updated_utc
         FROM tasks
         WHERE tasks.job_id = %s
         """
@@ -148,8 +148,8 @@ class DagDao:
                 cursor.execute(sql, params=(job_id,))
                 rows = cursor.fetchall()
                 for row in rows:
-                    task_id, state, task_input = row
-                    tasks.append(TaskView1(job_id, task_id, state, task_input))
+                    task_id, state, task_input, updated_utc = row
+                    tasks.append(TaskView1(job_id, task_id, state, task_input, updated_utc))
                 return tasks
 
     # a.k.a. get_work_1()
@@ -436,15 +436,23 @@ class DagDao:
         ALLOWED_STATES = [int(TaskState.RUNNING), int(TaskState.FAILED)]
         self._change_task_state(job_id, task_id, end_state, ALLOWED_STATES)
 
-    def _change_task_state(self, job_id: str, task_id: str, new_state: int, allowed_states: List[int]):
+    def _change_task_state(self, job_id: str, task_id: str, new_state: int, allowed_states: List[int], now_utc=None):
+        if not isinstance(job_id, str):  # TODO unit test for this
+            raise ValueError("job_id must be a str")
+        if not isinstance(task_id, str):
+            raise ValueError("task_id must be a str")
+
+        now_utc = now_utc or datetime.datetime.utcnow()
+        now_s = now_utc.strftime(DATETIME_COL_FORMAT)
+
         markers = self._markers(len(allowed_states))
         sql = f"""
-        UPDATE tasks SET tasks.state = %s
+        UPDATE tasks SET tasks.state = %s, updated_utc = %s
         WHERE tasks.job_id = %s AND tasks.task_id = %s AND tasks.state in ({markers});
         """
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(sql, params=(new_state, job_id, task_id) + tuple(allowed_states))
+                cursor.execute(sql, params=(new_state, now_s, job_id, task_id) + tuple(allowed_states))
                 if cursor.rowcount == 1:
                     conn.commit()
                 else:
@@ -464,8 +472,19 @@ class DagDao:
         ALLOWED_STATES = [int(TaskState.RUNNING)]
         self._change_task_state(job_id, task_id, int(TaskState.FAILED), ALLOWED_STATES)
 
-    def retry_task(self):  # actually just makes task go from FAILED to....
-        pass
+    def retry_task(self, job_id, task_id):  # actually just makes task go from FAILED to....
+        ALLOWED_STATES = [int(TaskState.FAILED)]
+        self._change_task_state(job_id, task_id, int(TaskState.PENDING), ALLOWED_STATES)
+
+    def keep_task_alive(self, job_id, task_id, now_utc=None):
+        """
+        Called by a worker to say it is still alive and working on the task.  Updates the `updated_utc` field to the
+        current time.
+        """
+        now_utc = now_utc or datetime.datetime.utcnow()
+        RUNNING = int(TaskState.RUNNING)
+        # we can re-use this method by making it a state change from RUNNING -> RUNNING.
+        self._change_task_state(job_id, task_id, RUNNING, [RUNNING], now_utc=now_utc)
 
     def get_work_1(self):
         pass # actually this is implemented in get_and_start_jobs()
@@ -473,7 +492,7 @@ class DagDao:
     def get_work_2(self):  # will implement as "get_and_start_tasks()"
         pass # TODO wont actually be implemented completely in the dao...will it?
 
-    def get_and_start_tasks(self, workers: List[str]) -> List[TaskAssignment]:
+    def get_and_start_tasks(self, workers: List[str], now_utc=None) -> List[TaskAssignment]:
         """
         Called to assign tasks to workers and market them as running.
 
@@ -481,6 +500,9 @@ class DagDao:
         job_id.
         """
         self._check_worker_args(workers)  # TODO unit test this being enforced
+
+        now_utc = now_utc or datetime.datetime.utcnow()
+        now_s = now_utc.strftime(DATETIME_COL_FORMAT)
 
         # TODO maybe add a table to keep track of what worker has a task? - inserting different workers is probably a massive perf hit
         # not a log... `task_ownership` -- primary key is task_id, and we do UPSERTs
@@ -503,10 +525,10 @@ class DagDao:
                     markers = self._markers(len(tasks))
                     sql = f"""
                     UPDATE tasks
-                    set tasks.state = 3
+                    set tasks.state = 3, updated_utc = %s
                     where tasks.task_id in ({markers}) and tasks.state = 1;
                     """
-                    cursor.execute(sql, params=tuple(task_ids))
+                    cursor.execute(sql, params=(now_s,) + tuple(task_ids))
                     if cursor.rowcount != len(rows):
                         raise Exception(f"rowcount: {cursor.rowcount}")  # TODO: proper transaction rollback
 

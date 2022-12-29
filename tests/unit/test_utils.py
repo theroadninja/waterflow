@@ -3,6 +3,7 @@ import inspect
 import os
 
 import waterflow
+from waterflow.dao import DagDao
 
 MYPATH = os.path.dirname(os.path.abspath(inspect.stack()[0][1]))
 
@@ -31,3 +32,9 @@ def task_view1_list_to_dict(results):
     keys of the dict are the task inputs (assumed to be a string)
     """
     return {base64.b64decode(task.task_input64).decode("UTF-8"): task for task in results}
+
+def get_task_state(dao: DagDao, job_id, task_id):
+    if not isinstance(task_id, str):
+        raise ValueError("task_id is wrong type")
+    tasks = dao.get_tasks_by_job(job_id)
+    return [task for task in tasks if task.task_id == task_id][0].state

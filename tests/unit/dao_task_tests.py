@@ -1,3 +1,4 @@
+import datetime
 import unittest
 
 import waterflow
@@ -5,8 +6,8 @@ from waterflow.dao import DagDao
 from waterflow.task import TaskState
 from waterflow.job import JobExecutionState
 from waterflow.exceptions import InvalidTaskState
-from waterflow.mocks.sample_dags import make_linear_test_dag, make_linear_test_dag2
-from .test_utils import get_conn_pool, path_to_sql, task_view1_list_to_dict
+from waterflow.mocks.sample_dags import make_linear_test_dag, make_linear_test_dag2, make_single_task_dag
+from .test_utils import get_conn_pool, path_to_sql, task_view1_list_to_dict, get_task_state
 
 class DaoTaskTests(unittest.TestCase):
 
@@ -156,4 +157,74 @@ class DaoTaskTests(unittest.TestCase):
         # make sure task completion still overrides FAILURE (maybe it generates an event?)
         dao.complete_task(job_id, job_tasks["A"].task_id)
 
+    def test_retry_task(self):
+        conn_pool = get_conn_pool()
+        dao = DagDao(conn_pool, "waterflow")
+        job_id = dao.add_job(job_input64=waterflow.to_base64_str("job"))
+        _ = dao.get_and_start_jobs(["worker1"])
 
+
+        dao.set_dag(job_id, make_linear_test_dag2())
+        dao.update_task_deps(job_id)
+
+        # cannot retry BLOCKED
+        job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
+        self.assertEqual(int(TaskState.BLOCKED), get_task_state(dao, job_id, job_tasks["A"].task_id))
+        with self.assertRaises(InvalidTaskState):
+            dao.retry_task(job_id, job_tasks["A"].task_id)
+
+        # cannot retry PENDING
+        self.assertEqual(int(TaskState.PENDING), get_task_state(dao, job_id, job_tasks["B"].task_id))
+        with self.assertRaises(InvalidTaskState):
+            dao.retry_task(job_id, job_tasks["B"].task_id)
+
+        # cannot retry RUNNING
+        task_assignments = dao.get_and_start_tasks(["w0"])
+        self.assertEqual(1, len(task_assignments))
+        self.assertEqual(int(TaskState.RUNNING), get_task_state(dao, job_id, job_tasks["B"].task_id))
+        with self.assertRaises(InvalidTaskState):
+            dao.retry_task(job_id, job_tasks["B"].task_id)
+
+        # can retry FAILED
+        dao.fail_task(job_id, job_tasks["B"].task_id)
+        dao.update_task_deps(job_id)
+        self.assertEqual(int(TaskState.FAILED), get_task_state(dao, job_id, job_tasks["B"].task_id))
+        self.assertEqual(int(TaskState.BLOCKED), get_task_state(dao, job_id, job_tasks["A"].task_id))
+        dao.retry_task(job_id, job_tasks["B"].task_id)
+        self.assertEqual(int(TaskState.PENDING), get_task_state(dao, job_id, job_tasks["B"].task_id))
+        self.assertEqual(int(TaskState.BLOCKED), get_task_state(dao, job_id, job_tasks["A"].task_id))
+
+        # cannot retry SUCCEEDED
+        task_assignments = dao.get_and_start_tasks(["w"])
+        self.assertEqual(1, len(task_assignments))
+        self.assertEqual(int(TaskState.RUNNING), get_task_state(dao, job_id, job_tasks["B"].task_id))
+        dao.complete_task(job_id, job_tasks["B"].task_id)
+        dao.update_task_deps(job_id)
+        self.assertEqual(int(TaskState.SUCCEEDED), get_task_state(dao, job_id, job_tasks["B"].task_id))
+        self.assertEqual(int(TaskState.PENDING), get_task_state(dao, job_id, job_tasks["A"].task_id))
+        with self.assertRaises(InvalidTaskState):
+            dao.retry_task(job_id, job_tasks["A"].task_id)
+
+    def test_keep_task_alive(self):
+        conn_pool = get_conn_pool()
+        dao = DagDao(conn_pool, "waterflow")
+        job_id = dao.add_job(job_input64=waterflow.to_base64_str("job"))
+        dao.get_and_start_jobs(["worker1"])
+        dao.set_dag(job_id, make_single_task_dag())
+        dao.update_task_deps(job_id)
+
+        now_utc = datetime.datetime(2010, 6, 10)
+        task_assignments = dao.get_and_start_tasks(["w"], now_utc)
+        self.assertEqual(1, len(task_assignments))
+        task_id = task_assignments[0].task_id
+        self.assertEqual(now_utc, dao.get_tasks_by_job(job_id)[0].updated_utc)
+        self.assertEqual(int(TaskState.RUNNING), get_task_state(dao, job_id, task_id))
+
+        now_utc2 = datetime.datetime(2010, 6, 11)
+        dao.keep_task_alive(job_id, task_id, now_utc2)
+        self.assertEqual(now_utc2, dao.get_tasks_by_job(job_id)[0].updated_utc)
+        self.assertEqual(int(TaskState.RUNNING), get_task_state(dao, job_id, task_id))
+
+
+
+        pass  # TODO need some kind of method to retrieve task details ...

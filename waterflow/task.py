@@ -5,6 +5,7 @@ TODO should this just be the public one?
 """
 from enum import IntEnum
 from dataclasses import dataclass
+import datetime
 from typing import List, Dict, Optional
 
 class TaskEligibilityState(IntEnum):
@@ -64,6 +65,7 @@ class TaskView1:  # TODO not sure what the final form will be
     task_id: str
     state: int
     task_input64: str
+    updated_utc: datetime.datetime
 
 
 def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename to check_valid and throw exceptions instead

@@ -2,7 +2,7 @@ import waterflow
 from waterflow.task import Task
 from waterflow.job import Dag
 
-def make_single_task_dag():
+def make_single_task_dag()-> Dag:
     """
     Graph looks like this:
     A
