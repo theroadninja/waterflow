@@ -2,6 +2,7 @@ import base64
 import uuid
 from mysql.connector import connect, pooling
 from .mysql_config import MysqlConfig
+import os
 
 
 def make_id():
@@ -29,5 +30,7 @@ def get_connection_pool(dbconf, pool_name):
     )
 
 def get_connection_pool_from_file(filename, pool_name="waterflow_dao"):
+    if not os.path.isfile(filename):
+        raise Exception(f"Can't find {filename}")
     dbconf = MysqlConfig.from_file(filename)
     return get_connection_pool(dbconf, pool_name)

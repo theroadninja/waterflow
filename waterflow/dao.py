@@ -6,6 +6,7 @@ from waterflow.exceptions import InvalidJobError, InvalidTaskState, InvalidJobSt
 from waterflow.task import Task, TaskState, TaskExecState, TaskView1, TaskAssignment
 import waterflow.task
 from waterflow.job import JobExecutionState, FetchDagTask, Dag, JobView1
+from waterflow import event_codes
 
 WORKER_LENGTH = 255  # must match the varchar length in the db schema
 
@@ -310,7 +311,7 @@ class DagDao:
                     raise ex
 
 
-    def fail_job(self, job_id: str, error_code, failure_message, failure_obj64) -> bool:
+    def fail_job(self, job_id: str, event_code, failure_message, failure_obj64) -> bool:
         """
         Tries to halt a job.   This will not work if the job is already in the SUCCEEDED for FAILED states.
 
@@ -329,10 +330,10 @@ class DagDao:
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
                 sql = """
-                INSERT INTO error_events (job_id, task_id, error_code, failure_message, failure_obj)
+                INSERT INTO error_events (job_id, task_id, event_code, failure_message, failure_obj)
                 VALUES (%s, %s, %s, %s, FROM_BASE64(%s));
                 """
-                cursor.execute(sql, params=(job_id, None, error_code, failure_message, failure_obj64))
+                cursor.execute(sql, params=(job_id, None, event_code, failure_message, failure_obj64))
                 conn.commit()
                 return True
 
@@ -430,11 +431,38 @@ class DagDao:
                     conn.commit()
                     return cursor.rowcount == 1
 
-    def pause_task(self):
-        pass
+    def complete_task(self, job_id, task_id):  # TODO rename; this is only for successful completion now
+        end_state = int(TaskState.SUCCEEDED)
+        ALLOWED_STATES = [int(TaskState.RUNNING), int(TaskState.FAILED)]
+        self._change_task_state(job_id, task_id, end_state, ALLOWED_STATES)
 
-    def unpause_task(self):
-        pass
+    def _change_task_state(self, job_id: str, task_id: str, new_state: int, allowed_states: List[int]):
+        markers = self._markers(len(allowed_states))
+        sql = f"""
+        UPDATE tasks SET tasks.state = %s
+        WHERE tasks.job_id = %s AND tasks.task_id = %s AND tasks.state in ({markers});
+        """
+        with self.conn_pool.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params=(new_state, job_id, task_id) + tuple(allowed_states))
+                if cursor.rowcount == 1:
+                    conn.commit()
+                else:
+                    raise InvalidTaskState(f"Task {task_id} for job {job_id} does not exist or cannot be canceled")
+
+    def cancel_task(self, job_id, task_id):
+        """
+        Operator canceled a task in the BLOCKED or PENDING states.  This is different from a task failing at runtime.
+        """
+        ALLOWED_STATES = [int(TaskState.BLOCKED), int(TaskState.PENDING)]
+        self._change_task_state(job_id, task_id, int(TaskState.FAILED), ALLOWED_STATES)
+
+    def fail_task(self, job_id, task_id):
+        """
+        Called by worker to incidate that a task has failed while executing.
+        """
+        ALLOWED_STATES = [int(TaskState.RUNNING)]
+        self._change_task_state(job_id, task_id, int(TaskState.FAILED), ALLOWED_STATES)
 
     def retry_task(self):  # actually just makes task go from FAILED to....
         pass
@@ -516,26 +544,3 @@ class DagDao:
                     raise Exception(f"rowcount was {cursor.rowcount} for task_id={task_id}")
             conn.commit()
 
-    def stop_task(self, job_id, task_id, end_state: int):
-        try:
-            # isisntance(int) will claim an IntEnum is an int, but it will still fail in mysql.
-            # so juch smash whatever we get into an int
-            end_state = int(end_state)
-        except ValueError:
-            raise ValueError(f"end_state is wrong type: {end_state}")
-
-        if end_state not in [int(TaskState.FAILED), int(TaskState.SUCCEEDED)]:
-            raise ValueError(f"Invalid end state: {end_state}")
-
-        sql = """
-        UPDATE `tasks`
-        SET state = %s
-        WHERE job_id = %s AND task_id = %s and state = %s;
-        """
-        params = (end_state, job_id, task_id, int(TaskState.RUNNING))
-        with self.conn_pool.get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(sql, params=params)
-                if cursor.rowcount != 1:
-                    raise InvalidTaskState(f"rowcount was {cursor.rowcount}")
-            conn.commit()

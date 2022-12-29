@@ -11,61 +11,9 @@ from waterflow import event_codes
 from waterflow.job import JobExecutionState, Dag
 from waterflow.dao import DagDao
 from waterflow.task import Task, TaskState
+from .test_utils import get_conn_pool, path_to_sql, task_view1_list_to_dict
 
-from waterflow.mocks.sample_dags import make_single_task_dag, make_linear_test_dag
-
-UNIT_TEST_DATABASE = "waterflow_unit_tests"
-
-
-def get_conn_pool():
-    # TODO switch to test database!
-
-    #return waterflow.get_connection_pool_from_file("../../local/mysqlconfig.json", "unit_test_pool")
-    return waterflow.get_connection_pool_from_file("../../local/mysqlconfig.json", "unit_test_pool")
-
-
-
-def make_test_dag():
-    """
-          A
-        /  \
-       B    C
-      / \  / \
-     D   E    F
-    """
-    a = waterflow.make_id()
-    b = waterflow.make_id()
-    c = waterflow.make_id()
-    d = waterflow.make_id()
-    e = waterflow.make_id()
-    f = waterflow.make_id()
-    tasks = [
-        Task(a, input64=to_base64_str("A")),
-        Task(b, input64=to_base64_str("B")),
-        Task(c, input64=to_base64_str("C")),
-        Task(d, input64=to_base64_str("D")),
-        Task(e, input64=to_base64_str("E")),
-        Task(f, input64=to_base64_str("F")),
-    ]
-    task_adj = {
-        a: [b, c],
-        b: [d, e],
-        c: [e, f],
-    }
-    return Dag(to_base64_str("TEST"), 0, tasks, task_adj)
-
-
-
-
-
-
-
-def task_view1_list_to_dict(results):
-    """
-    Takes the result of DagDao.get_tasks_by_job() and turns them into a dict where the
-    keys of the dict are the task inputs (assumed to be a string)
-    """
-    return {base64.b64decode(task.task_input64).decode("UTF-8"): task for task in results}
+from waterflow.mocks.sample_dags import make_single_task_dag, make_linear_test_dag, make_test_dag
 
 
 def count_table(conn, table_name):
@@ -79,7 +27,8 @@ def count_table(conn, table_name):
         for result in results:
             return result[0]
 
-class DaoTests(unittest.TestCase):
+
+class DaoJobTests(unittest.TestCase):
 
     def setUp(self):
         conn_pool = get_conn_pool()
@@ -90,7 +39,7 @@ class DaoTests(unittest.TestCase):
                 drop_sql = f"DROP TABLE IF EXISTS {table_list};"
                 cursor.execute(drop_sql)
 
-                with open("../../sql/database.sql") as f:
+                with open(path_to_sql()) as f:
                     create_sql = f.read()
                 results = cursor.execute(create_sql, multi=True)
                 # we must do this or we get a "connection not available" error closing the connection
@@ -234,11 +183,9 @@ class DaoTests(unittest.TestCase):
         self.assertEqual(int(TaskState.PENDING), job0_tasks["E"].state)
         self.assertEqual(int(TaskState.PENDING), job0_tasks["F"].state)
 
-        #     def stop_task(self, job_id, task_id, end_state: int):
-
         # should fail; task was never started
         with self.assertRaises(InvalidTaskState):
-            dao.stop_task(job0, task_id=job0_tasks["D"].task_id, end_state=int(TaskState.SUCCEEDED))
+            dao.complete_task(job0, task_id=job0_tasks["D"].task_id)
 
         dao.start_task(job0, task_id=job0_tasks["D"].task_id, worker="w0")
         dao.update_task_deps(job0)
@@ -251,7 +198,7 @@ class DaoTests(unittest.TestCase):
         self.assertEqual(int(TaskState.PENDING), job0_tasks["E"].state)
         self.assertEqual(int(TaskState.PENDING), job0_tasks["F"].state)
 
-        dao.stop_task(job0, task_id=job0_tasks["D"].task_id, end_state=int(TaskState.SUCCEEDED))
+        dao.complete_task(job0, task_id=job0_tasks["D"].task_id)
         dao.update_task_deps(job0)
 
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
@@ -264,7 +211,7 @@ class DaoTests(unittest.TestCase):
         self.assertEqual(int(TaskState.PENDING), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["E"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["E"].task_id, end_state=int(TaskState.SUCCEEDED))
+        dao.complete_task(job0, task_id=job0_tasks["E"].task_id)
         dao.update_task_deps(job0)
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
         self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
@@ -275,7 +222,7 @@ class DaoTests(unittest.TestCase):
         self.assertEqual(int(TaskState.PENDING), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["F"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["F"].task_id, end_state=int(TaskState.SUCCEEDED))
+        dao.complete_task(job0, task_id=job0_tasks["F"].task_id)
         dao.update_task_deps(job0)
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
         self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
@@ -286,7 +233,7 @@ class DaoTests(unittest.TestCase):
         self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["B"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["B"].task_id, end_state=int(TaskState.SUCCEEDED))
+        dao.complete_task(job0, task_id=job0_tasks["B"].task_id)
         dao.update_task_deps(job0)
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
         self.assertEqual(int(TaskState.BLOCKED), job0_tasks["A"].state)
@@ -297,7 +244,7 @@ class DaoTests(unittest.TestCase):
         self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["C"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["C"].task_id, end_state=int(TaskState.SUCCEEDED))
+        dao.complete_task(job0, task_id=job0_tasks["C"].task_id)
         dao.update_task_deps(job0)
         self.assertFalse(dao.update_job_state(job0))
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
@@ -309,7 +256,7 @@ class DaoTests(unittest.TestCase):
         self.assertEqual(int(TaskState.SUCCEEDED), job0_tasks["F"].state)
 
         dao.start_task(job0, task_id=job0_tasks["A"].task_id, worker="w0")
-        dao.stop_task(job0, task_id=job0_tasks["A"].task_id, end_state=int(TaskState.SUCCEEDED))
+        dao.complete_task(job0, task_id=job0_tasks["A"].task_id)
         dao.update_task_deps(job0)
         self.assertTrue(dao.update_job_state(job0))
         job0_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job0))
@@ -367,7 +314,7 @@ class DaoTests(unittest.TestCase):
         self._assert_tasks_in_state(int(TaskState.RUNNING), [job_tasks["E"]])
 
         # finish task E
-        dao.stop_task(job_id, job_tasks["E"].task_id, int(TaskState.SUCCEEDED))
+        dao.complete_task(job_id, job_tasks["E"].task_id)
         dao.update_task_deps(job_id)
         job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
         self._assert_blocked([job_tasks["A"], job_tasks["B"], job_tasks["C"]])
@@ -384,7 +331,7 @@ class DaoTests(unittest.TestCase):
         self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["E"]])
 
         # finish task D
-        dao.stop_task(job_id, job_tasks["D"].task_id, int(TaskState.SUCCEEDED))
+        dao.complete_task(job_id, job_tasks["D"].task_id)
         dao.update_task_deps(job_id)
         job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
         self._assert_blocked([job_tasks["A"], job_tasks["B"]])
@@ -401,7 +348,7 @@ class DaoTests(unittest.TestCase):
         self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["D"], job_tasks["E"]])
 
         # finish task C
-        dao.stop_task(job_id, job_tasks["C"].task_id, int(TaskState.SUCCEEDED))
+        dao.complete_task(job_id, job_tasks["C"].task_id)
         dao.update_task_deps(job_id)
         job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
         self._assert_blocked([job_tasks["A"]])
@@ -410,7 +357,7 @@ class DaoTests(unittest.TestCase):
 
         # start and finish B
         task_assignments = dao.get_and_start_tasks(["w0"])
-        dao.stop_task(job_id, job_tasks["B"].task_id, int(TaskState.SUCCEEDED))
+        dao.complete_task(job_id, job_tasks["B"].task_id)
         dao.update_task_deps(job_id)
         job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
         self._assert_tasks_in_state(int(TaskState.PENDING), [job_tasks["A"]])
@@ -418,7 +365,7 @@ class DaoTests(unittest.TestCase):
 
         #start and finish A
         task_assignments = dao.get_and_start_tasks(["w0"])
-        dao.stop_task(job_id, job_tasks["A"].task_id, int(TaskState.SUCCEEDED))
+        dao.complete_task(job_id, job_tasks["A"].task_id)
         dao.update_task_deps(job_id)
         job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
         self._assert_tasks_in_state(int(TaskState.SUCCEEDED), [job_tasks["A"], job_tasks["B"], job_tasks["C"], job_tasks["D"], job_tasks["E"]])
@@ -497,14 +444,15 @@ class DaoTests(unittest.TestCase):
         dao.update_task_deps(job_id)
         task_assignments = dao.get_and_start_tasks(["w0", "w1"])
         self.assertEqual(1, len(task_assignments))
-        dao.stop_task(job_id, task_assignments[0].task_id, int(TaskState.SUCCEEDED))
+        dao.complete_task(job_id, task_assignments[0].task_id)
         dao.update_job_state(job_id)
         self.assertEqual(int(JobExecutionState.SUCCEEDED), dao.get_job_info(job_id).state)
         with self.assertRaises(InvalidJobState):
             dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
 
-    def test_cancel_task(self):
-        pass  # TODO move task-related tests to a different file
+
+
+        # BLOCKED TO CANCELED
 
     # TODO - test large numbers of workers!  (maybe use multiple linear jobs)
     # TODO - test trying to mark non-running/non-pending tasks as SUCCEEDED or FAILED, and other invalid transitions

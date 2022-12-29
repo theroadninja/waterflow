@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS task_deps (
 CREATE TABLE IF NOT EXISTS error_events (
     job_id VARCHAR(32),
     task_id VARCHAR(32),  -- in this table, ok to be null
-    error_code TINYINT UNSIGNED,  -- whether got failure from service or canceled by user, etc
+    event_code TINYINT UNSIGNED,  -- whether got failure from service or canceled by user, etc
     failure_message VARCHAR(255), -- like exception message.  do we need this?
     failure_obj BLOB, -- for things like stack traces
 

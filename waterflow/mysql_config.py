@@ -15,7 +15,7 @@ class MysqlConfig:
     def from_file(filename):
         if not os.path.isfile(filename):
             raise ValueError(f"not a valid file: {filename}")
-        with open("../../local/mysqlconfig.json") as f:
+        with open(filename) as f:
             d = json.loads(f.read())
 
         return MysqlConfig(

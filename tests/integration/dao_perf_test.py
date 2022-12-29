@@ -154,12 +154,12 @@ def single_threaded_test(conn_pool, job_count, task_batch_size=1000):
         batch_update_sec = 0
         for task_assignment in tasks:
             stw_stop = StopWatch()
-            dao.stop_task(task_assignment.job_id, task_assignment.task_id, TaskState.SUCCEEDED)
+            dao.complete_task(task_assignment.job_id, task_assignment.task_id)
             batch_stop_sec += stw_stop.elapsed_sec()
             stw_update = StopWatch()
             dao.update_task_deps(task_assignment.job_id)  # TODO start using server methods so we dont have to remember this
             batch_update_sec += stw_update.elapsed_sec()
-        print(f"batch of {len(tasks)} tasks pulled in {stw_batch}, marked complete in {stw_batch2} running total: {task_count} stop_task()={batch_stop_sec} update_task_deps()={batch_update_sec}")
+        print(f"batch of {len(tasks)} tasks pulled in {stw_batch}, marked complete in {stw_batch2} running total: {task_count} complete_task()={batch_stop_sec} update_task_deps()={batch_update_sec}")
 
     print(f"{task_count} tasks run in {stw_all_tasks}")
     print(f"TEST COMPLETE: total time elapsed: {stw_total}")
@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
     # according to: https://dev.mysql.com/doc/connector-python/en/connector-python-connection-pooling.html
     # the mysql connector pool is thread safe
-    single_threaded_test(conn_pool, 1000)  # 10K takes 22 sec, 100K takes 338 sec
+    single_threaded_test(conn_pool, 500)  # 10K takes 22 sec, 100K takes 338 sec
 
     # 1,000:    116 sec
 

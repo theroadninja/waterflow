@@ -49,6 +49,6 @@ if __name__ == "__main__":
 
     dao.start_task(job_id, task3, "worker1")
     dao.start_task(job_id, task2, "worker1")
-    dao.stop_task(job_id, task3, int(TaskState.SUCCEEDED))
-    dao.stop_task(job_id, task2, int(TaskState.SUCCEEDED))
+    dao.complete_task(job_id, task3)
+    dao.complete_task(job_id, task2)
     dao.update_task_deps(job_id)
