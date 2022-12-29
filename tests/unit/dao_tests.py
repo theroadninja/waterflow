@@ -7,12 +7,12 @@ from typing import List, Dict
 from waterflow.exceptions import InvalidJobError, InvalidTaskState, InvalidJobState, NotImplementedYet
 import waterflow
 from waterflow import to_base64_str
-from waterflow import error_codes
+from waterflow import event_codes
 from waterflow.job import JobExecutionState, Dag
 from waterflow.dao import DagDao
 from waterflow.task import Task, TaskState
 
-from waterflow.mocks.sample_dags import make_single_task_dag
+from waterflow.mocks.sample_dags import make_single_task_dag, make_linear_test_dag
 
 UNIT_TEST_DATABASE = "waterflow_unit_tests"
 
@@ -55,37 +55,7 @@ def make_test_dag():
     return Dag(to_base64_str("TEST"), 0, tasks, task_adj)
 
 
-def make_linear_test_dag():
-    """
-    A
-     \
-      B
-       \
-        C
-         \
-          D
-           \
-            E
-    """
-    a = waterflow.make_id()
-    b = waterflow.make_id()
-    c = waterflow.make_id()
-    d = waterflow.make_id()
-    e = waterflow.make_id()
-    tasks = [
-        Task(a, input64=to_base64_str("A")),
-        Task(b, input64=to_base64_str("B")),
-        Task(c, input64=to_base64_str("C")),
-        Task(d, input64=to_base64_str("D")),
-        Task(e, input64=to_base64_str("E")),
-    ]
-    task_adj = {
-        a: [b],
-        b: [c],
-        c: [d],
-        d: [e],
-    }
-    return Dag(to_base64_str("TEST"), 0, tasks, task_adj)
+
 
 
 
@@ -466,20 +436,20 @@ class DaoTests(unittest.TestCase):
 
         # job doesnt exist
         with self.assertRaises(InvalidJobError):
-            dao.fail_job("i_dont_exist_123", error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+            dao.fail_job("i_dont_exist_123", event_codes.JOB_CANCELED, "killed by unit test", None)
 
         # job failed while in PENDING state
         job_id = dao.add_job(job_input64=waterflow.to_base64_str("JOB0"))
         print(f"test_fail_job() job_id={job_id}")
         self.assertEqual(int(JobExecutionState.PENDING), dao.get_job_info(job_id).state)
-        failed = dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+        failed = dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
         self.assertTrue(failed)
         job_info = dao.get_job_info(job_id)
         self.assertEqual(int(JobExecutionState.FAILED), job_info.state)
 
         # job already in FAILED state
         with self.assertRaises(InvalidJobState):
-            dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+            dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
 
         # job failed while in DAG_FETCH state (and dag fetch returns after job failed)
         job_id = dao.add_job(job_input64=waterflow.to_base64_str("JOB1"))
@@ -487,7 +457,7 @@ class DaoTests(unittest.TestCase):
         dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
         self.assertEqual(job_id, dag_fetch_tasks[0].job_id)
         self.assertEqual(int(JobExecutionState.DAG_FETCH), dao.get_job_info(job_id).state)
-        failed = dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+        failed = dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
         self.assertTrue(failed)
         job_info = dao.get_job_info(job_id)
         self.assertEqual(int(JobExecutionState.FAILED), job_info.state)
@@ -505,7 +475,7 @@ class DaoTests(unittest.TestCase):
         dao.update_task_deps(job_id)
         self.assertEqual(int(JobExecutionState.RUNNING), dao.get_job_info(job_id).state)
         with self.assertRaises(NotImplementedYet):
-            failed = dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+            failed = dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
         # since we can't cancel it yet, pull the task off the queue so it doesnt mess up other tests
         task_assignments = dao.get_and_start_tasks(["w0", "w1"])
         self.assertEqual(1, len(task_assignments))
@@ -531,7 +501,10 @@ class DaoTests(unittest.TestCase):
         dao.update_job_state(job_id)
         self.assertEqual(int(JobExecutionState.SUCCEEDED), dao.get_job_info(job_id).state)
         with self.assertRaises(InvalidJobState):
-            dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+            dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
+
+    def test_cancel_task(self):
+        pass  # TODO move task-related tests to a different file
 
     # TODO - test large numbers of workers!  (maybe use multiple linear jobs)
     # TODO - test trying to mark non-running/non-pending tasks as SUCCEEDED or FAILED, and other invalid transitions
