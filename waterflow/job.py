@@ -5,18 +5,15 @@ from typing import Dict, List, Optional
 
 from .task import Task
 
+
+# TODO move this stuff to dao_models.py
+
 class JobExecutionState(IntEnum):  # enum b/c its pythonic (though stupid)
     PENDING = 0  # note:  PENDING means there is no execution row
     DAG_FETCH = 1  # TODO rename to "FETCHING" ?
     RUNNING = 2
     SUCCEEDED = 3
     FAILED = 4
-
-@dataclass
-class FetchDagTask:
-    job_id: str
-    job_input64: str
-    worker: str
 
 @dataclass
 class Dag:
@@ -35,6 +32,8 @@ class JobView1:  # TODO not sure what the final form will be
     """
     job_id: str
     job_input64: str
+    job_input64_v: int
+    service_pointer: str
     created_utc: datetime.datetime
     state: Optional[int]  # TODO why is this optional?
     worker: Optional[str]

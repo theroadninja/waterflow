@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     PRIMARY KEY (job_id),
     created_utc DATETIME NOT NULL,
     job_input BLOB,   -- 16 MB
-    job_input_v TINYINT UNSIGNED -- version of serialization used for job_input BLOB
+    job_input_v TINYINT UNSIGNED, -- version of serialization used for job_input BLOB
+    service_pointer VARCHAR(128)  -- any UTF8 string (json or base64)
 );
 
 

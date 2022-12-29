@@ -5,10 +5,14 @@ import uuid
 from waterflow.exceptions import InvalidJobError, InvalidTaskState, InvalidJobState, NotImplementedYet
 from waterflow.task import Task, TaskState, TaskExecState, TaskView1, TaskAssignment
 import waterflow.task
-from waterflow.job import JobExecutionState, FetchDagTask, Dag, JobView1
+from waterflow.job import JobExecutionState, Dag, JobView1
 from waterflow import event_codes
+from waterflow.dao_models import PendingJob, FetchDagTask
 
 WORKER_LENGTH = 255  # must match the varchar length in the db schema
+
+# this must match the length of the `service_pointer` columns in the jobs and tasks tables.
+MAX_SERVICE_PTR_LEN = 128
 
 # the max # of workers the DAO itself will let you assign in a single call (just to have testable limits)
 MAX_WORKER_ASSIGN = 1024  # this does not mean the API call is limited to 64.
@@ -83,30 +87,36 @@ class DagDao:
                 rows = cursor.fetchall()
                 return rows[0][0]
 
-    def add_job(self, job_input64: str, job_input64_v: int = 0, now_utc: datetime.datetime = None):
+    #def add_job(self, job_input64: str, job_input64_v: int = 0, now_utc: datetime.datetime = None):
+    def add_job(self, job: PendingJob, now_utc: datetime.datetime = None):
         """
         Called by scheduer/trigger to start a job (to enqueue it for starting).
         """
-        self._check_base64_arg(job_input64)
-        self._check_tinyint_arg(job_input64_v)
+        self._check_base64_arg(job.job_input64)
+        self._check_tinyint_arg(job.job_input64_v)
+        if job.service_pointer is not None and len(job.service_pointer) > MAX_SERVICE_PTR_LEN:
+            raise ValueError(f"service pointer string cannot exceed {MAX_SERVICE_PTR_LEN}")
         job_id = str(uuid.uuid4()).replace("-", "")
 
         now_utc = now_utc or datetime.datetime.utcnow()
+        now_s = now_utc.strftime(DATETIME_COL_FORMAT)
 
         sql = """
-        insert into `jobs` (job_id, created_utc,  job_input, job_input_v)
-        VALUES (%s, %s, FROM_BASE64(%s), %s);
+        insert into `jobs` (job_id, created_utc,  job_input, job_input_v, service_pointer)
+        VALUES (%s, %s, FROM_BASE64(%s), %s, %s);
         """
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(sql, params=(job_id, now_utc.strftime(DATETIME_COL_FORMAT), job_input64, job_input64_v))
+                params = (job_id, now_s, job.job_input64, job.job_input64_v, job.service_pointer)
+                cursor.execute(sql, params=params)
                 conn.commit()  # required
 
         return job_id
 
     def get_job_info(self, job_id) -> JobView1:
         sql = """
-        SELECT jobs.job_id, jobs.created_utc, TO_BASE64(jobs.job_input), job_executions.state, job_executions.worker, TO_BASE64(job_executions.dag)
+        SELECT jobs.job_id, jobs.created_utc, TO_BASE64(jobs.job_input), jobs.job_input_v, jobs.service_pointer,
+        job_executions.state, job_executions.worker, TO_BASE64(job_executions.dag)
         FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
         WHERE jobs.job_id = %s
         """
@@ -117,7 +127,7 @@ class DagDao:
                 if len(rows) > 1:
                     Exception(f"too many rows fetched for job {job_id}")
                 elif len(rows) == 1:
-                    _, created_utc, job_input64, state, worker, dag64 = rows[0]
+                    _, created_utc, job_input64, job_input64_v, service_pointer, state, worker, dag64 = rows[0]
                     # NOTE:  the connector automatically reads the DATETIME column as a TZ-unaware python datetime object,
                     # but fortunately does not seem to fuck with it (mysql docs say that TIMESTAMP fields get fucked with but
                     # DATETIME fields do not)
@@ -128,6 +138,8 @@ class DagDao:
                     return JobView1(
                         job_id=job_id,
                         job_input64=job_input64,
+                        job_input64_v=job_input64_v,
+                        service_pointer=service_pointer,
                         created_utc=created_utc, # if it was str: datetime.datetime.strptime(row[1], DATETIME_COL_FORMAT)
                         state=state,
                         worker=worker,
@@ -168,7 +180,7 @@ class DagDao:
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
                 fetch_sql = """
-                SELECT jobs.job_id, jobs.job_input
+                SELECT jobs.job_id, jobs.job_input, jobs.service_pointer
                 FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
                 WHERE job_executions.job_id is NULL
                 LIMIT %s
@@ -176,7 +188,8 @@ class DagDao:
                 cursor.execute(fetch_sql, params=(len(workers),))
                 rows = cursor.fetchall()
                 for i, row in enumerate(rows):
-                    jobs.append(FetchDagTask(job_id=row[0], job_input64=row[1], worker=workers[i]))
+                    job_id, job_input64, service_pointer = row
+                    jobs.append(FetchDagTask(job_id, job_input64, service_pointer, worker=workers[i]))
 
                 sql = """
                         insert into job_executions (job_id, created_utc, updated_utc, state, worker, dag)
