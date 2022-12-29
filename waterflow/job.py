@@ -36,6 +36,6 @@ class JobView1:  # TODO not sure what the final form will be
     job_id: str
     job_input64: str
     created_utc: datetime.datetime
-    state: Optional[int]
+    state: Optional[int]  # TODO why is this optional?
     worker: Optional[str]
     dag64: Optional[str]

@@ -4,11 +4,15 @@ import unittest
 from dataclasses import dataclass
 from typing import List, Dict
 
+from waterflow.exceptions import InvalidJobError, InvalidTaskState, InvalidJobState, NotImplementedYet
 import waterflow
 from waterflow import to_base64_str
+from waterflow import error_codes
 from waterflow.job import JobExecutionState, Dag
 from waterflow.dao import DagDao
 from waterflow.task import Task, TaskState
+
+from waterflow.mocks.sample_dags import make_single_task_dag
 
 UNIT_TEST_DATABASE = "waterflow_unit_tests"
 
@@ -82,6 +86,8 @@ def make_linear_test_dag():
         d: [e],
     }
     return Dag(to_base64_str("TEST"), 0, tasks, task_adj)
+
+
 
 
 def task_view1_list_to_dict(results):
@@ -261,8 +267,8 @@ class DaoTests(unittest.TestCase):
         #     def stop_task(self, job_id, task_id, end_state: int):
 
         # should fail; task was never started
-        with self.assertRaises(Exception):
-            dao.stop_task(job0, task_id=job0_tasks["D"].task_id, end_state=int(TaskExecState.SUCCEEDED))
+        with self.assertRaises(InvalidTaskState):
+            dao.stop_task(job0, task_id=job0_tasks["D"].task_id, end_state=int(TaskState.SUCCEEDED))
 
         dao.start_task(job0, task_id=job0_tasks["D"].task_id, worker="w0")
         dao.update_task_deps(job0)
@@ -451,9 +457,85 @@ class DaoTests(unittest.TestCase):
         task_assignments = dao.get_and_start_tasks(["w0"])
         self.assertEqual(0, len(task_assignments))
 
-        # TODO - test large numbers of workers!  (maybe use multiple linear jobs)
-        # TODO - test trying to mark non-running/non-pending tasks as SUCCEEDED or FAILED, and other invalid transitions
-        #  ( maybe just code up some kind of state model function to check the transitions? )
+    def test_fail_job(self):
+        """
+        Tests fail_job()
+        """
+        conn_pool = get_conn_pool()
+        dao = DagDao(conn_pool, "waterflow")
+
+        # job doesnt exist
+        with self.assertRaises(InvalidJobError):
+            dao.fail_job("i_dont_exist_123", error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+
+        # job failed while in PENDING state
+        job_id = dao.add_job(job_input64=waterflow.to_base64_str("JOB0"))
+        print(f"test_fail_job() job_id={job_id}")
+        self.assertEqual(int(JobExecutionState.PENDING), dao.get_job_info(job_id).state)
+        failed = dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+        self.assertTrue(failed)
+        job_info = dao.get_job_info(job_id)
+        self.assertEqual(int(JobExecutionState.FAILED), job_info.state)
+
+        # job already in FAILED state
+        with self.assertRaises(InvalidJobState):
+            dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+
+        # job failed while in DAG_FETCH state (and dag fetch returns after job failed)
+        job_id = dao.add_job(job_input64=waterflow.to_base64_str("JOB1"))
+        print(f"test_fail_job() job_id={job_id}")
+        dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
+        self.assertEqual(job_id, dag_fetch_tasks[0].job_id)
+        self.assertEqual(int(JobExecutionState.DAG_FETCH), dao.get_job_info(job_id).state)
+        failed = dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+        self.assertTrue(failed)
+        job_info = dao.get_job_info(job_id)
+        self.assertEqual(int(JobExecutionState.FAILED), job_info.state)
+        # dag fetch return after job failed
+        with self.assertRaises(InvalidJobState):
+            dao.set_dag(job_id, make_single_task_dag())
+        task_assignments = dao.get_and_start_tasks(["w0", "w1"])
+        self.assertEqual(0, len(task_assignments))
+
+        # job failed while in RUNNING state (and make sure tasks got canceled)
+        job_id = dao.add_job(job_input64=waterflow.to_base64_str("JOB2"))
+        print(f"test_fail_job() job_id={job_id}")
+        _ = dao.get_and_start_jobs(["worker1"])
+        dao.set_dag(job_id, make_single_task_dag())
+        dao.update_task_deps(job_id)
+        self.assertEqual(int(JobExecutionState.RUNNING), dao.get_job_info(job_id).state)
+        with self.assertRaises(NotImplementedYet):
+            failed = dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+        # since we can't cancel it yet, pull the task off the queue so it doesnt mess up other tests
+        task_assignments = dao.get_and_start_tasks(["w0", "w1"])
+        self.assertEqual(1, len(task_assignments))
+
+        # TODO when we can cancel jobs in the running state:  task fetch after failure
+        # self.assertTrue(failed)
+        # self.assertEqual(int(JobExecutionState.FAILED), dao.get_job_info(job_id).state)
+        # # try to fetch task for failed job
+        # task_assignments = dao.get_and_start_tasks(["w0", "w1"])
+        # self.assertEqual(0, len(task_assignments))
+
+        # TODO when we can cancel jobs in the running state:  task completion after failure
+
+        # job failed while in SUCCEEDED state
+        job_id = dao.add_job(job_input64=waterflow.to_base64_str("JOB2"))
+        print(f"test_fail_job() job_id={job_id}")
+        _ = dao.get_and_start_jobs(["worker1"])
+        dao.set_dag(job_id, make_single_task_dag())
+        dao.update_task_deps(job_id)
+        task_assignments = dao.get_and_start_tasks(["w0", "w1"])
+        self.assertEqual(1, len(task_assignments))
+        dao.stop_task(job_id, task_assignments[0].task_id, int(TaskState.SUCCEEDED))
+        dao.update_job_state(job_id)
+        self.assertEqual(int(JobExecutionState.SUCCEEDED), dao.get_job_info(job_id).state)
+        with self.assertRaises(InvalidJobState):
+            dao.fail_job(job_id, error_codes.UNKNOWN_ERROR, "killed by unit test", None)
+
+    # TODO - test large numbers of workers!  (maybe use multiple linear jobs)
+    # TODO - test trying to mark non-running/non-pending tasks as SUCCEEDED or FAILED, and other invalid transitions
+    #  ( maybe just code up some kind of state model function to check the transitions? )
 
     # TODO also need tests for task failure, cancelation, etc
 

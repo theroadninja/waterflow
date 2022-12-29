@@ -43,8 +43,9 @@ class Task:
     task_id: str  # TODO this class is internal because external caller won't know the task ids ahead of time
     # state: int
     input64: str
+    input64_v: int = 0
     #eligibility_state: Optional[int] = None
-    execution: Optional[TaskExecution] = None
+    #execution: Optional[TaskExecution] = None
 
 @dataclass
 class TaskAssignment:
@@ -96,10 +97,6 @@ def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename 
     unknown_ids = task_ids_in_adj - task_ids
     if unknown_ids:
         raise ValueError(f"adj list contains unknown ids: {unknown_ids}")
-
-    if task_ids != task_ids_in_adj:
-        # TODO actualy this could be fine
-        raise ValueError(f"task id mismatch: {task_ids} != {task_ids_in_adj}")
 
 
 

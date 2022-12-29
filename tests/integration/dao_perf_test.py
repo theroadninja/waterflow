@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
     # according to: https://dev.mysql.com/doc/connector-python/en/connector-python-connection-pooling.html
     # the mysql connector pool is thread safe
-    single_threaded_test(conn_pool, 16000)  # 10K takes 22 sec, 100K takes 338 sec
+    single_threaded_test(conn_pool, 1000)  # 10K takes 22 sec, 100K takes 338 sec
 
     # 1,000:    116 sec
 
