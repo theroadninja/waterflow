@@ -34,7 +34,7 @@ class DaoTaskTests(unittest.TestCase):
         dao = DagDao(conn_pool, "waterflow")
 
         # cancel BLOCKED task
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("job")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("job")))
         _ = dao.get_and_start_jobs(["worker1"])
         dao.set_dag(job_id, make_linear_test_dag2(), work_queue=0)
         dao.update_task_deps(job_id)
@@ -56,7 +56,7 @@ class DaoTaskTests(unittest.TestCase):
     def test_cannot_cancel_task(self):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("job")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("job")))
         _ = dao.get_and_start_jobs(["worker1"])
         dao.set_dag(job_id, make_linear_test_dag2(), work_queue=0)
         dao.update_task_deps(job_id)
@@ -84,7 +84,7 @@ class DaoTaskTests(unittest.TestCase):
         """
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("job")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("job")))
         _ = dao.get_and_start_jobs(["worker1"])
         dao.set_dag(job_id, make_linear_test_dag(), work_queue=0)
         dao.update_task_deps(job_id)
@@ -114,7 +114,7 @@ class DaoTaskTests(unittest.TestCase):
     def test_fail_task(self):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("job")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("job")))
         _ = dao.get_and_start_jobs(["worker1"])
         dao.set_dag(job_id, make_linear_test_dag2(), work_queue=0)
         dao.update_task_deps(job_id)
@@ -161,7 +161,7 @@ class DaoTaskTests(unittest.TestCase):
     def test_retry_task(self):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("job")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("job")))
         _ = dao.get_and_start_jobs(["worker1"])
 
 
@@ -209,13 +209,13 @@ class DaoTaskTests(unittest.TestCase):
     def test_keep_task_alive(self):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("job")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("job")))
         dao.get_and_start_jobs(["worker1"])
         dao.set_dag(job_id, make_single_task_dag(), work_queue=0)
         dao.update_task_deps(job_id)
 
         now_utc = datetime.datetime(2010, 6, 10)
-        task_assignments = dao.get_and_start_tasks(["w"], now_utc)
+        task_assignments = dao.get_and_start_tasks(["w"], 0, now_utc)
         self.assertEqual(1, len(task_assignments))
         task_id = task_assignments[0].task_id
         self.assertEqual(now_utc, dao.get_tasks_by_job(job_id)[0].updated_utc)

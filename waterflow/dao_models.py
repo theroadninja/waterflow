@@ -9,6 +9,7 @@ class PendingJob:
     """
     A new job submitted for execution.
     """
+    job_name: str
     job_input64: str  # base64 string
     job_input64_v: int = 0  # TODO remove default value
     service_pointer: str = None  # any UTF8 string  # TODO remove default value

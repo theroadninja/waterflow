@@ -26,6 +26,9 @@ MAX_TAG_COUNT = 8
 
 MAX_TAG_LENGTH = 255
 
+# max length of `jobs`.`job_name` column
+MAX_JOB_NAME_LEN = 64
+
 # format string for datetime.strftime() for Mysql's DATETIME column
 DATETIME_COL_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -100,6 +103,8 @@ class DagDao:
         """
         Called by scheduer/trigger to start a job (to enqueue it for starting).
         """
+        if job.job_name is None or len(job.job_name) > MAX_JOB_NAME_LEN:
+            raise ValueError(f"Invalid job name: {job.job_name}")
         self._check_base64_arg(job.job_input64)
         self._check_tinyint_arg(job.job_input64_v)
         if job.service_pointer is not None and len(job.service_pointer) > MAX_SERVICE_PTR_LEN:
@@ -118,12 +123,12 @@ class DagDao:
         now_s = now_utc.strftime(DATETIME_COL_FORMAT)
 
         sql = """
-        insert into `jobs` (job_id, created_utc,  job_input, job_input_v, service_pointer, work_queue)
-        VALUES (%s, %s, FROM_BASE64(%s), %s, %s, %s);
+        insert into `jobs` (job_id, job_name, created_utc,  job_input, job_input_v, service_pointer, work_queue)
+        VALUES (%s, %s, %s, FROM_BASE64(%s), %s, %s, %s);
         """
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
-                params = (job_id, now_s, job.job_input64, job.job_input64_v, job.service_pointer, job.work_queue)
+                params = (job_id, job.job_name, now_s, job.job_input64, job.job_input64_v, job.service_pointer, job.work_queue)
                 cursor.execute(sql, params=params)
                 conn.commit()  # required
 
@@ -140,8 +145,8 @@ class DagDao:
 
     def get_job_info(self, job_id) -> JobView1:
         sql = """
-        SELECT jobs.job_id, jobs.created_utc, TO_BASE64(jobs.job_input), jobs.job_input_v, jobs.service_pointer,
-        job_executions.state, job_executions.worker, TO_BASE64(job_executions.dag), jobs.work_queue
+        SELECT jobs.job_id, jobs.job_name, jobs.created_utc, TO_BASE64(jobs.job_input), jobs.job_input_v,
+        jobs.service_pointer, job_executions.state, job_executions.worker, TO_BASE64(job_executions.dag), jobs.work_queue
         FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
         WHERE jobs.job_id = %s
         """
@@ -150,7 +155,7 @@ class DagDao:
                 cursor.execute(sql, params=(job_id,))
                 rows = cursor.fetchall()
                 if len(rows) == 1:
-                    _, created_utc, job_input64, job_input64_v, service_pointer, state, worker, dag64, work_queue = rows[0]
+                    _, job_name, created_utc, job_input64, job_input64_v, service_pointer, state, worker, dag64, work_queue = rows[0]
                     # NOTE:  the connector automatically reads the DATETIME column as a TZ-unaware python datetime object,
                     # but fortunately does not seem to fuck with it (mysql docs say that TIMESTAMP fields get fucked with but
                     # DATETIME fields do not)
@@ -165,6 +170,7 @@ class DagDao:
 
                     return JobView1(
                         job_id=job_id,
+                        job_name=job_name,
                         job_input64=job_input64,
                         job_input64_v=job_input64_v,
                         service_pointer=service_pointer,
@@ -537,13 +543,15 @@ class DagDao:
     def get_work_2(self):  # will implement as "get_and_start_tasks()"
         pass # TODO wont actually be implemented completely in the dao...will it?
 
-    def get_and_start_tasks(self, workers: List[str], now_utc=None) -> List[TaskAssignment]:
+    def get_and_start_tasks(self, workers: List[str], work_queue=0, now_utc=None) -> List[TaskAssignment]:
         """
         Called to assign tasks to workers and market them as running.
 
         TODO - the caller (the service code) will need to call update_deps() for every returned
         job_id.
         """
+        if not isinstance(work_queue, int):
+            raise ValueError("work_queue is wrong type")
         self._check_worker_args(workers)  # TODO unit test this being enforced
 
         now_utc = now_utc or datetime.datetime.utcnow()
@@ -588,12 +596,10 @@ class DagDao:
 
     def start_task(self, job_id, task_id, worker):
         """
-        Starts a specific task -- mostly for testing.
-        Called when a task is assigned to a worker
+        Starts a specific task -- mostly for testing.  This does not check if the task can be started -- probably dont
+        want to expose this one (use it only for testing)
 
         TODO - maybe this would be useful for an API call where someone instructs a worker to start particular task
-
-        TODO this does not check if the task can be started -- probably dont want to expose this one (use it only for testing)
         """
         if len(worker) > WORKER_LENGTH:
             raise ValueError(f"worker cannot be longer than {WORKER_LENGTH}")
@@ -602,8 +608,7 @@ class DagDao:
             raise ValueError("task_id must be a str")
 
         sql = """
-        UPDATE tasks
-        set tasks.state = 3
+        UPDATE tasks set tasks.state = 3
         where tasks.job_id = %s AND tasks.task_id = %s and tasks.state = 1;
         """
         params = (job_id, task_id)

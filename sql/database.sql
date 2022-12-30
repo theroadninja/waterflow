@@ -7,6 +7,7 @@
 CREATE TABLE IF NOT EXISTS jobs (
     job_id VARCHAR(32) NOT NULL,   -- uuid without dashes
     PRIMARY KEY (job_id),
+    job_name VARCHAR(64),
     created_utc DATETIME NOT NULL,
     job_input BLOB,   -- 16 MB
     job_input_v TINYINT UNSIGNED, -- version of serialization used for job_input BLOB
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     task_input BLOB,
     task_input_v TINYINT UNSIGNED,
     service_pointer VARCHAR(128),  -- any UTF8 string (json or base64)
-    work_queue TINYINT UNSIGNED DEFAULT 0,  -- TODO remove default value
+    work_queue TINYINT UNSIGNED DEFAULT 0,  -- tasks inherit the work queue of their job.  TODO remove default value
 
     PRIMARY KEY (task_id),
     CONSTRAINT uc_id UNIQUE (job_id, task_id),

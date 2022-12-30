@@ -47,13 +47,19 @@ class DaoJobTests(unittest.TestCase):
                 for _ in results:
                     pass  # print("{} {}".format(result.statement, result.fetchall()))
 
+    def test_job_name(self):
+        conn_pool = get_conn_pool()
+        dao = DagDao(conn_pool, "waterflow")
+        job_id = dao.add_job(PendingJob(job_name="myfirstjob", job_input64=waterflow.to_base64_str("A")))
+        self.assertEqual("myfirstjob", dao.get_job_info(job_id).job_name)
+
     def test_service_pointer(self):
         SERVICE_POINTER = "service;method;"
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
 
         # normal
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("A"), service_pointer=SERVICE_POINTER))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("A"), service_pointer=SERVICE_POINTER))
         self.assertEqual(SERVICE_POINTER, dao.get_job_info(job_id).service_pointer)
         fetch_tasks = dao.get_and_start_jobs(["w0"])
         self.assertEqual(1, len(fetch_tasks))
@@ -61,7 +67,7 @@ class DaoJobTests(unittest.TestCase):
 
         # max length
         MAX_SERVICE_POINTER = "A" * 128
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("A"), service_pointer=MAX_SERVICE_POINTER))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("A"), service_pointer=MAX_SERVICE_POINTER))
         self.assertEqual(MAX_SERVICE_POINTER, dao.get_job_info(job_id).service_pointer)
         fetch_tasks = dao.get_and_start_jobs(["w0"])
         self.assertEqual(1, len(fetch_tasks))
@@ -70,19 +76,19 @@ class DaoJobTests(unittest.TestCase):
         # too long
         TOO_LONG = "A" * 129
         with self.assertRaises(ValueError):
-            dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("A"), service_pointer=TOO_LONG))
+            dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("A"), service_pointer=TOO_LONG))
 
     def test_job_tags(self):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
 
-        job = PendingJob(job_input64=waterflow.to_base64_str("A"), tags=["a=b", "c=d", "e=f"])
+        job = PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("A"), tags=["a=b", "c=d", "e=f"])
         job_id = dao.add_job(job)
         job_info = dao.get_job_info(job_id)
         self.assertEqual(sorted(["a=b", "c=d", "e=f"]), sorted(job_info.tags))
 
         tags = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
-        job = PendingJob(job_input64=waterflow.to_base64_str("A"), tags=tags)
+        job = PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("A"), tags=tags)
         with self.assertRaises(ValueError):
             dao.add_job(job)
 
@@ -94,16 +100,16 @@ class DaoJobTests(unittest.TestCase):
 
 
         self.assertEqual(0, dao.count_jobs(PENDING))
-        tmp_job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("A"), tags=["tag"]))
+        tmp_job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("A"), tags=["tag"]))
         self.assertEqual(int(JobExecutionState.PENDING), dao.get_job_info(tmp_job_id).state)
         self.assertEqual(1, dao.count_jobs(PENDING))
-        dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("B")))
+        dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("B")))
         self.assertEqual(2, dao.count_jobs(PENDING))
-        dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("C")))
+        dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("C")))
         self.assertEqual(3, dao.count_jobs(PENDING))
-        dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("D")))
+        dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("D")))
         self.assertEqual(4, dao.count_jobs(PENDING))
-        dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("E")))
+        dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("E")))
         self.assertEqual(5, dao.count_jobs(PENDING))
         self.assertEqual(0, dao.count_jobs(FETCHING))
 
@@ -176,7 +182,7 @@ class DaoJobTests(unittest.TestCase):
         FETCHING = int(JobExecutionState.DAG_FETCH)
 
         self.assertEqual(0, dao.count_jobs(PENDING))
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("dep_test")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("dep_test")))
         print(f"test_update_task_deps job_id={job_id}")
 
         dao.get_and_start_jobs(["w0"])
@@ -197,7 +203,7 @@ class DaoJobTests(unittest.TestCase):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
 
-        job0_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB0")))
+        job0_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB0")))
         self.assertEqual(int(JobExecutionState.PENDING), dao.get_job_info(job0_id).state)
 
         dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
@@ -331,7 +337,7 @@ class DaoJobTests(unittest.TestCase):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
 
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB0")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB0")))
         dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
         dao.set_dag(job_id, make_linear_test_dag(), work_queue=0)
         dao.update_task_deps(job_id)
@@ -428,7 +434,7 @@ class DaoJobTests(unittest.TestCase):
             dao.fail_job("i_dont_exist_123", event_codes.JOB_CANCELED, "killed by unit test", None)
 
         # job failed while in PENDING state
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB0")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB0")))
         print(f"test_fail_job() job_id={job_id}")
         self.assertEqual(int(JobExecutionState.PENDING), dao.get_job_info(job_id).state)
         failed = dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
@@ -441,7 +447,7 @@ class DaoJobTests(unittest.TestCase):
             dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
 
         # job failed while in DAG_FETCH state (and dag fetch returns after job failed)
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB1")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB1")))
         print(f"test_fail_job() job_id={job_id}")
         dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
         self.assertEqual(job_id, dag_fetch_tasks[0].job_id)
@@ -457,7 +463,7 @@ class DaoJobTests(unittest.TestCase):
         self.assertEqual(0, len(task_assignments))
 
         # job failed while in RUNNING state (and make sure tasks got canceled)
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB2")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB2")))
         print(f"test_fail_job() job_id={job_id}")
         _ = dao.get_and_start_jobs(["worker1"])
         dao.set_dag(job_id, make_single_task_dag(), work_queue=0)
@@ -479,7 +485,7 @@ class DaoJobTests(unittest.TestCase):
         # TODO when we can cancel jobs in the running state:  task completion after failure
 
         # job failed while in SUCCEEDED state
-        job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB2")))
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB2")))
         print(f"test_fail_job() job_id={job_id}")
         _ = dao.get_and_start_jobs(["worker1"])
         dao.set_dag(job_id, make_single_task_dag(), work_queue=0)
@@ -496,8 +502,8 @@ class DaoJobTests(unittest.TestCase):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
 
-        job_id0 = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB0"), work_queue=0))
-        job_id1 = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB0"), work_queue=1))
+        job_id0 = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB0"), work_queue=0))
+        job_id1 = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB0"), work_queue=1))
 
         fetch_tasks = dao.get_and_start_jobs(["w0", "w1", "w2"], work_queue=1)
         self.assertEqual(1, len(fetch_tasks))

@@ -31,6 +31,7 @@ class JobView1:  # TODO not sure what the final form will be
     Only used for pulling info out of the DB about a job
     """
     job_id: str
+    job_name: str
     job_input64: str
     job_input64_v: int
     service_pointer: str
