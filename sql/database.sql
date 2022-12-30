@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     created_utc DATETIME NOT NULL,
     job_input BLOB,   -- 16 MB
     job_input_v TINYINT UNSIGNED, -- version of serialization used for job_input BLOB
-    service_pointer VARCHAR(128)  -- any UTF8 string (json or base64)
+    service_pointer VARCHAR(128),  -- any UTF8 string (json or base64)
+    work_queue TINYINT UNSIGNED DEFAULT 0,  -- TODO remove default value
+    INDEX (work_queue)
 );
 
 
@@ -24,7 +26,9 @@ CREATE TABLE IF NOT EXISTS job_executions (
     -- TODO last update utc and created utc
     dag BLOB,
     dag_v TINYINT UNSIGNED,
-    FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
+    work_queue TINYINT UNSIGNED DEFAULT 0,  -- TODO remove default value
+    FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
+    INDEX (work_queue)
 );
 
 CREATE TABLE IF NOT EXISTS job_tags (
@@ -45,11 +49,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     task_input BLOB,
     task_input_v TINYINT UNSIGNED,
     service_pointer VARCHAR(128),  -- any UTF8 string (json or base64)
+    work_queue TINYINT UNSIGNED DEFAULT 0,  -- TODO remove default value
 
     PRIMARY KEY (task_id),
     CONSTRAINT uc_id UNIQUE (job_id, task_id),
     FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
-    INDEX (state)
+    INDEX (state),
+    INDEX (work_queue)
 );
 
 CREATE TABLE IF NOT EXISTS task_deps (

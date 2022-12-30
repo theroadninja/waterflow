@@ -13,6 +13,7 @@ class PendingJob:
     job_input64_v: int = 0  # TODO remove default value
     service_pointer: str = None  # any UTF8 string  # TODO remove default value
     tags: List[str] = None  # TODO implement, TODO remove default value
+    work_queue: int = 0
 
 @dataclass
 class FetchDagTask:  # TODO rename to FetchDagAssignment?
@@ -22,6 +23,7 @@ class FetchDagTask:  # TODO rename to FetchDagAssignment?
     job_id: str
     job_input64: str
     service_pointer: str
+    work_queue: int
     worker: str
 
 @dataclass
@@ -35,4 +37,3 @@ class TaskAssignment:
     task_input64: str
     task_input64_v: int
     service_pointer: str
-    # TODO "service_pointer64" goes here!

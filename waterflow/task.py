@@ -46,9 +46,8 @@ class Task:
     task_name: str
     # state: int
     input64: str
-    input64_v: int = 0
-    #eligibility_state: Optional[int] = None
-    #execution: Optional[TaskExecution] = None
+    input64_v: int = 0  # TODO remove default value
+    service_pointer: str = None  # TODO remove default value
 
 
 

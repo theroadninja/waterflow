@@ -139,7 +139,7 @@ class DaoJobTests(unittest.TestCase):
 
 
         self.assertEqual(5, len(dag_fetch_tasks))
-        dao.set_dag(job0, dag)
+        dao.set_dag(job0, dag, work_queue=0)
         self.assertEqual(0, dao.count_jobs(PENDING))
         self.assertEqual(4, dao.count_jobs(FETCHING))
 
@@ -180,7 +180,7 @@ class DaoJobTests(unittest.TestCase):
         print(f"test_update_task_deps job_id={job_id}")
 
         dao.get_and_start_jobs(["w0"])
-        dao.set_dag(job_id, make_test_dag())
+        dao.set_dag(job_id, make_test_dag(), work_queue=0)
         job_tasks = task_view1_list_to_dict(dao.get_tasks_by_job(job_id))
         self._assert_tasks_in_state(int(TaskState.BLOCKED), job_tasks.values())
         dao.update_task_deps(job_id)
@@ -205,7 +205,7 @@ class DaoJobTests(unittest.TestCase):
         job0 = dag_fetch_tasks[0].job_id
 
 
-        dao.set_dag(job0_id, make_test_dag())
+        dao.set_dag(job0_id, make_test_dag(), work_queue=0)
         self.assertEqual(int(JobExecutionState.RUNNING), dao.get_job_info(job0_id).state)
 
         dao.update_task_deps(job0)
@@ -333,7 +333,7 @@ class DaoJobTests(unittest.TestCase):
 
         job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB0")))
         dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
-        dao.set_dag(job_id, make_linear_test_dag())
+        dao.set_dag(job_id, make_linear_test_dag(), work_queue=0)
         dao.update_task_deps(job_id)
 
         print(job_id)
@@ -452,7 +452,7 @@ class DaoJobTests(unittest.TestCase):
         self.assertEqual(int(JobExecutionState.FAILED), job_info.state)
         # dag fetch return after job failed
         with self.assertRaises(InvalidJobState):
-            dao.set_dag(job_id, make_single_task_dag())
+            dao.set_dag(job_id, make_single_task_dag(), work_queue=0)
         task_assignments = dao.get_and_start_tasks(["w0", "w1"])
         self.assertEqual(0, len(task_assignments))
 
@@ -460,7 +460,7 @@ class DaoJobTests(unittest.TestCase):
         job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB2")))
         print(f"test_fail_job() job_id={job_id}")
         _ = dao.get_and_start_jobs(["worker1"])
-        dao.set_dag(job_id, make_single_task_dag())
+        dao.set_dag(job_id, make_single_task_dag(), work_queue=0)
         dao.update_task_deps(job_id)
         self.assertEqual(int(JobExecutionState.RUNNING), dao.get_job_info(job_id).state)
         with self.assertRaises(NotImplementedYet):
@@ -482,7 +482,7 @@ class DaoJobTests(unittest.TestCase):
         job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB2")))
         print(f"test_fail_job() job_id={job_id}")
         _ = dao.get_and_start_jobs(["worker1"])
-        dao.set_dag(job_id, make_single_task_dag())
+        dao.set_dag(job_id, make_single_task_dag(), work_queue=0)
         dao.update_task_deps(job_id)
         task_assignments = dao.get_and_start_tasks(["w0", "w1"])
         self.assertEqual(1, len(task_assignments))
@@ -492,9 +492,21 @@ class DaoJobTests(unittest.TestCase):
         with self.assertRaises(InvalidJobState):
             dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
 
+    def test_work_queue(self):
+        conn_pool = get_conn_pool()
+        dao = DagDao(conn_pool, "waterflow")
 
+        job_id0 = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB0"), work_queue=0))
+        job_id1 = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("JOB0"), work_queue=1))
 
-        # BLOCKED TO CANCELED
+        fetch_tasks = dao.get_and_start_jobs(["w0", "w1", "w2"], work_queue=1)
+        self.assertEqual(1, len(fetch_tasks))
+        self.assertEqual(job_id1, fetch_tasks[0].job_id)
+
+        fetch_tasks = dao.get_and_start_jobs(["w0", "w1", "w2"], work_queue=0)
+        self.assertEqual(1, len(fetch_tasks))
+        self.assertEqual(job_id0, fetch_tasks[0].job_id)
+
 
     # TODO - test large numbers of workers!  (maybe use multiple linear jobs)
     # TODO - test trying to mark non-running/non-pending tasks as SUCCEEDED or FAILED, and other invalid transitions

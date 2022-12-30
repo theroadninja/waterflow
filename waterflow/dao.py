@@ -96,7 +96,6 @@ class DagDao:
                 rows = cursor.fetchall()
                 return rows[0][0]
 
-    #def add_job(self, job_input64: str, job_input64_v: int = 0, now_utc: datetime.datetime = None):
     def add_job(self, job: PendingJob, now_utc: datetime.datetime = None):
         """
         Called by scheduer/trigger to start a job (to enqueue it for starting).
@@ -119,12 +118,12 @@ class DagDao:
         now_s = now_utc.strftime(DATETIME_COL_FORMAT)
 
         sql = """
-        insert into `jobs` (job_id, created_utc,  job_input, job_input_v, service_pointer)
-        VALUES (%s, %s, FROM_BASE64(%s), %s, %s);
+        insert into `jobs` (job_id, created_utc,  job_input, job_input_v, service_pointer, work_queue)
+        VALUES (%s, %s, FROM_BASE64(%s), %s, %s, %s);
         """
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
-                params = (job_id, now_s, job.job_input64, job.job_input64_v, job.service_pointer)
+                params = (job_id, now_s, job.job_input64, job.job_input64_v, job.service_pointer, job.work_queue)
                 cursor.execute(sql, params=params)
                 conn.commit()  # required
 
@@ -142,7 +141,7 @@ class DagDao:
     def get_job_info(self, job_id) -> JobView1:
         sql = """
         SELECT jobs.job_id, jobs.created_utc, TO_BASE64(jobs.job_input), jobs.job_input_v, jobs.service_pointer,
-        job_executions.state, job_executions.worker, TO_BASE64(job_executions.dag)
+        job_executions.state, job_executions.worker, TO_BASE64(job_executions.dag), jobs.work_queue
         FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
         WHERE jobs.job_id = %s
         """
@@ -151,7 +150,7 @@ class DagDao:
                 cursor.execute(sql, params=(job_id,))
                 rows = cursor.fetchall()
                 if len(rows) == 1:
-                    _, created_utc, job_input64, job_input64_v, service_pointer, state, worker, dag64 = rows[0]
+                    _, created_utc, job_input64, job_input64_v, service_pointer, state, worker, dag64, work_queue = rows[0]
                     # NOTE:  the connector automatically reads the DATETIME column as a TZ-unaware python datetime object,
                     # but fortunately does not seem to fuck with it (mysql docs say that TIMESTAMP fields get fucked with but
                     # DATETIME fields do not)
@@ -173,6 +172,7 @@ class DagDao:
                         state=state,
                         worker=worker,
                         dag64=dag64,
+                        work_queue=work_queue,
                         tags=tags,
                     )
                 else:
@@ -195,10 +195,12 @@ class DagDao:
                 return tasks
 
     # a.k.a. get_work_1()
-    def get_and_start_jobs(self, workers: List[str], now_utc=None) -> List[FetchDagTask]:
+    def get_and_start_jobs(self, workers: List[str], work_queue=0, now_utc=None) -> List[FetchDagTask]:
         """
         Called to get fetch-dag tasks for workers, which starts a job.
         """
+        if not isinstance(work_queue, int):
+            raise ValueError("work queue must be an int")
         now_utc = now_utc or datetime.datetime.utcnow()
 
         # TODO add a work_queue column!
@@ -210,31 +212,31 @@ class DagDao:
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
                 fetch_sql = """
-                SELECT jobs.job_id, jobs.job_input, jobs.service_pointer
+                SELECT jobs.job_id, jobs.job_input, jobs.service_pointer, jobs.work_queue
                 FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
-                WHERE job_executions.job_id is NULL
+                WHERE job_executions.job_id is NULL AND jobs.work_queue = %s
                 LIMIT %s
                 """
-                cursor.execute(fetch_sql, params=(len(workers),))
+                cursor.execute(fetch_sql, params=(work_queue, len(workers),))
                 rows = cursor.fetchall()
                 for i, row in enumerate(rows):
-                    job_id, job_input64, service_pointer = row
-                    jobs.append(FetchDagTask(job_id, job_input64, service_pointer, worker=workers[i]))
+                    job_id, job_input64, service_pointer, work_queue = row
+                    jobs.append(FetchDagTask(job_id, job_input64, service_pointer, work_queue, worker=workers[i]))
 
                 sql = """
-                        insert into job_executions (job_id, created_utc, updated_utc, state, worker, dag)
-                        values (%s, %s, %s, %s, %s, NULL);
+                        insert into job_executions (job_id, created_utc, updated_utc, state, worker, dag, work_queue)
+                        values (%s, %s, %s, %s, %s, NULL, %s);
                         """
                 for fetch_task in jobs:
                     now_s = now_utc.strftime(DATETIME_COL_FORMAT)
-                    params = (fetch_task.job_id, now_s, now_s, int(JobExecutionState.DAG_FETCH), fetch_task.worker)
+                    params = (fetch_task.job_id, now_s, now_s, int(JobExecutionState.DAG_FETCH), fetch_task.worker, work_queue)
                     cursor.execute(sql, params=params)
                 conn.commit()
 
         return jobs
 
     #def set_dag(self, job_id: str, dag64: str, tasks: List[Task], task_deps: Dict[str, List[str]]):
-    def set_dag(self, job_id: str, dag: Dag, now_utc: datetime.datetime = None):
+    def set_dag(self, job_id: str, dag: Dag, work_queue: int, now_utc: datetime.datetime = None):
         """
         Called when worker has finished fetching the dag.
 
@@ -261,22 +263,22 @@ class DagDao:
 
                 sql = """
                 update job_executions
-                set dag=FROM_BASE64(%s), dag_v=%s, state=(%s), updated_utc=%s
+                set dag=FROM_BASE64(%s), dag_v=%s, state=(%s), updated_utc=%s, work_queue = %s
                 where job_id = %s AND state = %s AND dag IS NULL;
                 """
                 expected_state = int(JobExecutionState.DAG_FETCH)
-                params = (dag.raw_dag64, dag.raw_dagv, int(JobExecutionState.RUNNING), now_s, job_id, expected_state)
+                params = (dag.raw_dag64, dag.raw_dagv, int(JobExecutionState.RUNNING), now_s, work_queue, job_id, expected_state)
                 cursor.execute(sql, params=params)
                 if cursor.rowcount == 0:
                     conn.rollback()
                     raise InvalidJobState(f"job {job_id} does not exist or is in the wrong state")
 
                 sql = """
-                insert into `tasks` (job_id, task_id, created_utc, updated_utc, state, task_input, task_input_v)
-                values (%s, %s, %s, %s, 0, FROM_BASE64(%s), %s);
+                insert into `tasks` (job_id, task_id, created_utc, updated_utc, state, task_input, task_input_v, service_pointer, work_queue)
+                values (%s, %s, %s, %s, 0, FROM_BASE64(%s), %s, %s, %s);
                 """
                 for task in dag.tasks:
-                    params = (job_id, task.task_id, now_s, now_s, task.input64, task.input64_v)
+                    params = (job_id, task.task_id, now_s, now_s, task.input64, task.input64_v, task.service_pointer, work_queue)
                     cursor.execute(sql, params=params)
 
                 sql = """

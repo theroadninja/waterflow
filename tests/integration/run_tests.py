@@ -39,7 +39,7 @@ if __name__ == "__main__":
         task4: [task1],
     }
 
-    dao.set_dag(job_id, Dag(waterflow.to_base64_str("def"), 0, tasks=tasks, adj_list=task_adj))
+    dao.set_dag(job_id, Dag(waterflow.to_base64_str("def"), 0, tasks=tasks, adj_list=task_adj), work_queue=0)
     dao.update_task_deps(job_id)
 
     dao.start_task(job_id, task3, "worker1")

@@ -129,7 +129,7 @@ def single_threaded_test(conn_pool, job_count, task_batch_size=1000):
     stw3 = StopWatch()
     for fetch_task in fetch_dag_tasks:
         fetch_task.job_id
-        dao.set_dag(fetch_task.job_id, make_test_dag10())  # NOTE: make_test_dag10() may slow it down
+        dao.set_dag(fetch_task.job_id, make_test_dag10(), work_queue=0)  # NOTE: make_test_dag10() may slow it down
         dao.update_task_deps(fetch_task.job_id)  # TODO really need to start using server methods
 
     print(f"{len(fetch_dag_tasks)} dags set in {stw3}")
@@ -178,7 +178,7 @@ if __name__ == "__main__":
 
     # according to: https://dev.mysql.com/doc/connector-python/en/connector-python-connection-pooling.html
     # the mysql connector pool is thread safe
-    single_threaded_test(conn_pool, 500)  # 10K takes 22 sec, 100K takes 338 sec
+    single_threaded_test(conn_pool, 200)  # 10K takes 22 sec, 100K takes 338 sec
 
     # 1,000:    116 sec
 
