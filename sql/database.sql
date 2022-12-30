@@ -27,14 +27,24 @@ CREATE TABLE IF NOT EXISTS job_executions (
     FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS job_tags (
+    job_id VARCHAR(32),
+    tag VARCHAR(255),
+
+    FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
+    INDEX (tag)
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     job_id VARCHAR(32),
     task_id VARCHAR(32) NOT NULL,
+    task_name VARCHAR(64),
     created_utc DATETIME NOT NULL,
     updated_utc DATETIME NOT NULL,
     state TINYINT UNSIGNED, -- 0 to 255
     task_input BLOB,
     task_input_v TINYINT UNSIGNED,
+    service_pointer VARCHAR(128),  -- any UTF8 string (json or base64)
 
     PRIMARY KEY (task_id),
     CONSTRAINT uc_id UNIQUE (job_id, task_id),

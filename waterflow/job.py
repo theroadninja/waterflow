@@ -38,3 +38,4 @@ class JobView1:  # TODO not sure what the final form will be
     state: Optional[int]  # TODO why is this optional?
     worker: Optional[str]
     dag64: Optional[str]
+    tags: List[str]

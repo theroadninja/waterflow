@@ -3,25 +3,34 @@ from typing import List, Dict
 import uuid
 
 from waterflow.exceptions import InvalidJobError, InvalidTaskState, InvalidJobState, NotImplementedYet
-from waterflow.task import Task, TaskState, TaskExecState, TaskView1, TaskAssignment
+from waterflow.task import Task, TaskState, TaskExecState, TaskView1
 import waterflow.task
 from waterflow.job import JobExecutionState, Dag, JobView1
 from waterflow import event_codes
-from waterflow.dao_models import PendingJob, FetchDagTask
+from waterflow.dao_models import PendingJob, FetchDagTask, TaskAssignment
 
 WORKER_LENGTH = 255  # must match the varchar length in the db schema
 
 # this must match the length of the `service_pointer` columns in the jobs and tasks tables.
 MAX_SERVICE_PTR_LEN = 128
 
+# must match the length of `tasks.task_name` column
+MAX_TASK_NAME_LEN = 64
+
 # the max # of workers the DAO itself will let you assign in a single call (just to have testable limits)
 MAX_WORKER_ASSIGN = 1024  # this does not mean the API call is limited to 64.
+
+# Max number of "tags" that a job can have.
+# Don't know at what point too many tags becomes an issue, so just picking a low number that should work for now.
+MAX_TAG_COUNT = 8
+
+MAX_TAG_LENGTH = 255
 
 # format string for datetime.strftime() for Mysql's DATETIME column
 DATETIME_COL_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 class DagDao:
-    ALL_TABLES = ['job_executions', 'jobs', 'task_deps', 'tasks', 'error_events']
+    ALL_TABLES = ['job_executions', 'jobs', 'job_tags', 'task_deps', 'tasks', 'error_events']
 
     def __init__(self, mysql_conn_pool, dbname):
         self.conn_pool = mysql_conn_pool
@@ -96,6 +105,14 @@ class DagDao:
         self._check_tinyint_arg(job.job_input64_v)
         if job.service_pointer is not None and len(job.service_pointer) > MAX_SERVICE_PTR_LEN:
             raise ValueError(f"service pointer string cannot exceed {MAX_SERVICE_PTR_LEN}")
+
+        if job.tags:
+            if len(job.tags) > MAX_TAG_COUNT:
+                raise ValueError(f"number of tags exceeds max of {MAX_TAG_COUNT}")
+            for tag in job.tags:
+                if len(tag) > MAX_TAG_LENGTH:
+                    raise ValueError(f"tag {tag} is too long")
+
         job_id = str(uuid.uuid4()).replace("-", "")
 
         now_utc = now_utc or datetime.datetime.utcnow()
@@ -111,6 +128,15 @@ class DagDao:
                 cursor.execute(sql, params=params)
                 conn.commit()  # required
 
+                if job.tags:
+                    sql = """
+                    INSERT INTO `job_tags` (job_tags.job_id, job_tags.tag)
+                    VALUES (%s, %s);
+                    """
+                    for tag in job.tags:
+                        cursor.execute(sql, params=(job_id, tag))
+                    conn.commit()
+
         return job_id
 
     def get_job_info(self, job_id) -> JobView1:
@@ -124,9 +150,7 @@ class DagDao:
             with conn.cursor() as cursor:
                 cursor.execute(sql, params=(job_id,))
                 rows = cursor.fetchall()
-                if len(rows) > 1:
-                    Exception(f"too many rows fetched for job {job_id}")
-                elif len(rows) == 1:
+                if len(rows) == 1:
                     _, created_utc, job_input64, job_input64_v, service_pointer, state, worker, dag64 = rows[0]
                     # NOTE:  the connector automatically reads the DATETIME column as a TZ-unaware python datetime object,
                     # but fortunately does not seem to fuck with it (mysql docs say that TIMESTAMP fields get fucked with but
@@ -134,6 +158,11 @@ class DagDao:
                     if state is None:
                         # if the execution row is missing, that means it is PENDING
                         state = int(JobExecutionState.PENDING)
+
+                    sql = "SELECT job_tags.tag FROM job_tags WHERE job_tags.job_id = %s;"
+                    cursor.execute(sql, params=(job_id,))
+                    rows = cursor.fetchall()
+                    tags = [row[0] for row in rows]
 
                     return JobView1(
                         job_id=job_id,
@@ -144,6 +173,7 @@ class DagDao:
                         state=state,
                         worker=worker,
                         dag64=dag64,
+                        tags=tags,
                     )
                 else:
                     raise Exception(f"cannot find job {job_id}")
@@ -526,12 +556,15 @@ class DagDao:
                 conn.start_transaction()
 
                 sql = """
-                select tasks.job_id, tasks.task_id, TO_BASE64(task_input) from tasks
+                select tasks.job_id, tasks.task_id, tasks.task_name, TO_BASE64(tasks.task_input), tasks.task_input_v, 
+                tasks.service_pointer from tasks
                 where tasks.state = 1 limit %s;
                 """
                 cursor.execute(sql, params=(len(workers),))
                 rows = cursor.fetchall()
-                tasks = [TaskAssignment(job_id, task_id, task_input) for job_id, task_id, task_input in rows]
+                tasks = [TaskAssignment(job_id, task_id, task_name, task_input, task_input_v, service_pointer)
+                         for job_id, task_id, task_name, task_input, task_input_v, service_pointer in rows
+                ]
                 task_ids = [task.task_id for task in tasks]
 
                 if len(task_ids) > 0:

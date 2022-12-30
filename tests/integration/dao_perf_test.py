@@ -6,6 +6,7 @@ import time
 import waterflow
 from waterflow import to_base64_str
 import waterflow.dao
+from waterflow.dao_models import PendingJob
 from waterflow.task import Task, TaskState
 from waterflow.job import Dag
 
@@ -54,16 +55,16 @@ def make_test_dag10():
     i = waterflow.make_id()
     j = waterflow.make_id()
     tasks = [
-        Task(a, input64=to_base64_str("A")),
-        Task(b, input64=to_base64_str("B")),
-        Task(c, input64=to_base64_str("C")),
-        Task(d, input64=to_base64_str("D")),
-        Task(e, input64=to_base64_str("E")),
-        Task(f, input64=to_base64_str("F")),
-        Task(g, input64=to_base64_str("G")),
-        Task(h, input64=to_base64_str("H")),
-        Task(i, input64=to_base64_str("I")),
-        Task(j, input64=to_base64_str("J")),
+        Task(a, task_name="A", input64=to_base64_str("A")),
+        Task(b, task_name="B", input64=to_base64_str("B")),
+        Task(c, task_name="C", input64=to_base64_str("C")),
+        Task(d, task_name="D", input64=to_base64_str("D")),
+        Task(e, task_name="E", input64=to_base64_str("E")),
+        Task(f, task_name="F", input64=to_base64_str("F")),
+        Task(g, task_name="G", input64=to_base64_str("G")),
+        Task(h, task_name="H", input64=to_base64_str("H")),
+        Task(i, task_name="I", input64=to_base64_str("I")),
+        Task(j, task_name="J", input64=to_base64_str("J")),
     ]
     task_adj = {
         a: [b, c],
@@ -108,7 +109,7 @@ def single_threaded_test(conn_pool, job_count, task_batch_size=1000):
     job_ids = []
     stw1 = StopWatch()
     for job_index in range(job_count):
-        job_id = dao.add_job(waterflow.to_base64_str(f"job index={job_index}"))
+        job_id = dao.add_job(PendingJob(waterflow.to_base64_str(f"job index={job_index}")))
         job_ids.append(job_id)
 
     print(f"{len(job_ids)} jobs created in {stw1}")

@@ -9,7 +9,7 @@ def make_single_task_dag()-> Dag:
     """
     a = waterflow.make_id()
     tasks = [
-        Task(a, input64=waterflow.to_base64_str("A")),
+        Task(a, task_name="A", input64=waterflow.to_base64_str("A")),
     ]
     task_adj = {}
     return Dag(waterflow.to_base64_str("TEST"), 0, tasks, task_adj)
@@ -33,11 +33,11 @@ def make_linear_test_dag():
     d = waterflow.make_id()
     e = waterflow.make_id()
     tasks = [
-        Task(a, input64=waterflow.to_base64_str("A")),
-        Task(b, input64=waterflow.to_base64_str("B")),
-        Task(c, input64=waterflow.to_base64_str("C")),
-        Task(d, input64=waterflow.to_base64_str("D")),
-        Task(e, input64=waterflow.to_base64_str("E")),
+        Task(a, task_name="A", input64=waterflow.to_base64_str("A")),
+        Task(b, task_name="B", input64=waterflow.to_base64_str("B")),
+        Task(c, task_name="C", input64=waterflow.to_base64_str("C")),
+        Task(d, task_name="D", input64=waterflow.to_base64_str("D")),
+        Task(e, task_name="E", input64=waterflow.to_base64_str("E")),
     ]
     task_adj = {
         a: [b],
@@ -56,8 +56,8 @@ def make_linear_test_dag2():
     a = waterflow.make_id()
     b = waterflow.make_id()
     tasks = [
-        Task(a, input64=waterflow.to_base64_str("A")),
-        Task(b, input64=waterflow.to_base64_str("B")),
+        Task(a, task_name="A", input64=waterflow.to_base64_str("A")),
+        Task(b, task_name="B", input64=waterflow.to_base64_str("B")),
     ]
     task_adj = {
         a: [b],
@@ -79,12 +79,12 @@ def make_test_dag():
     e = waterflow.make_id()
     f = waterflow.make_id()
     tasks = [
-        Task(a, input64=waterflow.to_base64_str("A")),
-        Task(b, input64=waterflow.to_base64_str("B")),
-        Task(c, input64=waterflow.to_base64_str("C")),
-        Task(d, input64=waterflow.to_base64_str("D")),
-        Task(e, input64=waterflow.to_base64_str("E")),
-        Task(f, input64=waterflow.to_base64_str("F")),
+        Task(a, task_name="A", input64=waterflow.to_base64_str("A")),
+        Task(b, task_name="B", input64=waterflow.to_base64_str("B")),
+        Task(c, task_name="C", input64=waterflow.to_base64_str("C")),
+        Task(d, task_name="D", input64=waterflow.to_base64_str("D")),
+        Task(e, task_name="E", input64=waterflow.to_base64_str("E")),
+        Task(f, task_name="F", input64=waterflow.to_base64_str("F")),
     ]
     task_adj = {
         a: [b, c],

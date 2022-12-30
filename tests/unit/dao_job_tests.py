@@ -72,6 +72,20 @@ class DaoJobTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("A"), service_pointer=TOO_LONG))
 
+    def test_job_tags(self):
+        conn_pool = get_conn_pool()
+        dao = DagDao(conn_pool, "waterflow")
+
+        job = PendingJob(job_input64=waterflow.to_base64_str("A"), tags=["a=b", "c=d", "e=f"])
+        job_id = dao.add_job(job)
+        job_info = dao.get_job_info(job_id)
+        self.assertEqual(sorted(["a=b", "c=d", "e=f"]), sorted(job_info.tags))
+
+        tags = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
+        job = PendingJob(job_input64=waterflow.to_base64_str("A"), tags=tags)
+        with self.assertRaises(ValueError):
+            dao.add_job(job)
+
     def test_jobs(self):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
@@ -80,7 +94,7 @@ class DaoJobTests(unittest.TestCase):
 
 
         self.assertEqual(0, dao.count_jobs(PENDING))
-        tmp_job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("A")))
+        tmp_job_id = dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("A"), tags=["tag"]))
         self.assertEqual(int(JobExecutionState.PENDING), dao.get_job_info(tmp_job_id).state)
         self.assertEqual(1, dao.count_jobs(PENDING))
         dao.add_job(PendingJob(job_input64=waterflow.to_base64_str("B")))
@@ -133,9 +147,9 @@ class DaoJobTests(unittest.TestCase):
         with conn_pool.get_connection() as conn:
             self.assertTrue(count_table(conn, "jobs") > 0)
             self.assertTrue(count_table(conn, "job_executions") > 0)
+            self.assertTrue(count_table(conn, "job_tags") > 0)
             self.assertTrue(count_table(conn, "tasks") > 0)
             self.assertTrue(count_table(conn, "task_deps") > 0)
-            # self.assertTrue(count_table(conn, "task_executions") > 0)
 
             with conn.cursor() as cursor:
                 cursor.execute("delete from jobs")
@@ -143,6 +157,7 @@ class DaoJobTests(unittest.TestCase):
 
             self.assertTrue(count_table(conn, "jobs") == 0)
             self.assertTrue(count_table(conn, "job_executions") == 0)
+            self.assertTrue(count_table(conn, "job_tags") == 0)
             self.assertTrue(count_table(conn, "tasks") == 0)
             self.assertTrue(count_table(conn, "task_deps") == 0)
 

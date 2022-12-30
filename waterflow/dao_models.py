@@ -15,7 +15,7 @@ class PendingJob:
     tags: List[str] = None  # TODO implement, TODO remove default value
 
 @dataclass
-class FetchDagTask:
+class FetchDagTask:  # TODO rename to FetchDagAssignment?
     """
     Info about a job needed to fetch the dag.
     """
@@ -23,3 +23,16 @@ class FetchDagTask:
     job_input64: str
     service_pointer: str
     worker: str
+
+@dataclass
+class TaskAssignment:
+    """
+    Data type returned to worker to tell it to run a task
+    """
+    job_id: str
+    task_id: str
+    task_name: str
+    task_input64: str
+    task_input64_v: int
+    service_pointer: str
+    # TODO "service_pointer64" goes here!

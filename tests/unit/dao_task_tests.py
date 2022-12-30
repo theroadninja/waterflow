@@ -225,7 +225,3 @@ class DaoTaskTests(unittest.TestCase):
         dao.keep_task_alive(job_id, task_id, now_utc2)
         self.assertEqual(now_utc2, dao.get_tasks_by_job(job_id)[0].updated_utc)
         self.assertEqual(int(TaskState.RUNNING), get_task_state(dao, job_id, task_id))
-
-
-
-        pass  # TODO need some kind of method to retrieve task details ...
