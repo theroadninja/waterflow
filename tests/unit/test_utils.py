@@ -25,6 +25,19 @@ def path_to_sql():
         raise FileNotFoundError(filename)
     return filename
 
+def drop_and_recreate_database(conn):
+    with conn.cursor() as cursor:
+        table_list = ",".join(DagDao.ALL_TABLES)
+        drop_sql = f"DROP TABLE IF EXISTS {table_list};"
+        cursor.execute(drop_sql)
+
+        with open(path_to_sql()) as f:
+            create_sql = f.read()
+        results = cursor.execute(create_sql, multi=True)
+        # we must do this or we get a "connection not available" error closing the connection
+        for _ in results:
+            pass  # print("{} {}".format(result.statement, result.fetchall()))
+
 
 def task_view1_list_to_dict(results):
     """

@@ -15,15 +15,8 @@ class JobExecutionState(IntEnum):  # enum b/c its pythonic (though stupid)
     SUCCEEDED = 3
     FAILED = 4
 
-@dataclass
-class Dag:
-    """
-    Internal class, only used to pass to the DAO.
-    """
-    raw_dag64: str  # the raw bytes of the dag, serialized as a base64 string
-    raw_dagv: int  # version for the serialization of the dag
-    tasks: Task
-    adj_list: Dict[str, List[str]]
+from waterflow import dao_models
+Dag = dao_models.Dag  # TODO finish moving Dag to dao_models.py
 
 @dataclass
 class JobView1:  # TODO not sure what the final form will be

@@ -12,7 +12,7 @@ from waterflow.job import JobExecutionState, Dag
 from waterflow.dao import DagDao
 from waterflow.dao_models import PendingJob
 from waterflow.task import Task, TaskState
-from .test_utils import get_conn_pool, path_to_sql, task_view1_list_to_dict
+from .test_utils import get_conn_pool, path_to_sql, task_view1_list_to_dict, drop_and_recreate_database
 
 from waterflow.mocks.sample_dags import make_single_task_dag, make_linear_test_dag, make_test_dag
 
@@ -34,18 +34,7 @@ class DaoJobTests(unittest.TestCase):
     def setUp(self):
         conn_pool = get_conn_pool()
         with conn_pool.get_connection() as conn:
-
-            with conn.cursor() as cursor:
-                table_list = ",".join(DagDao.ALL_TABLES)
-                drop_sql = f"DROP TABLE IF EXISTS {table_list};"
-                cursor.execute(drop_sql)
-
-                with open(path_to_sql()) as f:
-                    create_sql = f.read()
-                results = cursor.execute(create_sql, multi=True)
-                # we must do this or we get a "connection not available" error closing the connection
-                for _ in results:
-                    pass  # print("{} {}".format(result.statement, result.fetchall()))
+            drop_and_recreate_database(conn)
 
     def test_job_name(self):
         conn_pool = get_conn_pool()

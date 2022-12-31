@@ -435,15 +435,12 @@ class DagDao:
     def update_job_state(self, job_id):  #a.k.a. "all tasks succeeded"
         """
         Checks if all tasks for a job have been completed.
-
         See also:  update_task_deps()
-
         :returns: True if the job state was changed to succeeded, False if it still has unfinished rows, or if it was already succeeded.
         """
         now_utc = datetime.datetime.utcnow()
 
-        # TODO this cannot take a job out of the failed state (even though all tasksk succeeded...)
-
+        # TODO this should not take a job out of the failed state (even though all tasks succeeded...)
 
         sql = """
         select tasks.job_id, count(*) as unfinished_count from tasks
@@ -536,12 +533,6 @@ class DagDao:
         RUNNING = int(TaskState.RUNNING)
         # we can re-use this method by making it a state change from RUNNING -> RUNNING.
         self._change_task_state(job_id, task_id, RUNNING, [RUNNING], now_utc=now_utc)
-
-    def get_work_1(self):
-        pass # actually this is implemented in get_and_start_jobs()
-
-    def get_work_2(self):  # will implement as "get_and_start_tasks()"
-        pass # TODO wont actually be implemented completely in the dao...will it?
 
     def get_and_start_tasks(self, workers: List[str], work_queue=0, now_utc=None) -> List[TaskAssignment]:
         """

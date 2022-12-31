@@ -35,19 +35,10 @@ class TaskState(IntEnum):
 class TaskExecution:
     pass
 
-@dataclass
-class Task:
-    """
-    This is the internal class that is used on the Dag object.
-    Internal class that is only used to pass info to the DAO.  See also job.py:Dag
-    """
-    # job_id: str
-    task_id: str  # TODO this class is internal because external caller won't know the task ids ahead of time
-    task_name: str
-    # state: int
-    input64: str
-    input64_v: int = 0  # TODO remove default value
-    service_pointer: str = None  # TODO remove default value
+
+from waterflow import dao_models
+Task = dao_models.Task  # TODO finish moving to dao_models.py
+
 
 
 

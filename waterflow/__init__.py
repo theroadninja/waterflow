@@ -18,6 +18,12 @@ def to_base64_str(s: str) -> str:
     return base64.b64encode(s.encode("UTF-8")).decode("UTF-8")
 
 
+def from_base64_str(s: str) -> str:  # TODO unit test
+    if not isinstance(s, str):
+        raise ValueError("s must be a string")
+    return base64.b64decode(s.encode("UTF-8")).decode("UTF-8")
+
+
 def get_connection_pool(dbconf, pool_name):
     return pooling.MySQLConnectionPool(
         pool_name=pool_name,
