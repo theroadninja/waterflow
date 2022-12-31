@@ -6,7 +6,7 @@ import json
 from typing import Dict
 from waterflow import get_connection_pool_from_file, service_methods
 from waterflow.dao import DagDao
-from .flask_adapter import read_pending_job
+from .flask_adapter import read_pending_job, work_item_to_response, read_dag_from_request
 
 app = Flask("Waterflow Flask")
 
@@ -48,23 +48,25 @@ def get_dao(app):
 def something():
     return "Waterflow Flask Server"
 
+
 @app.route("/api/submit_job/<int:work_queue>", methods=["POST"])  # TODO /api/ to distinguish from /ui/ methods
 def submit_job(work_queue):
-    print("make it here")
     job = read_pending_job(work_queue, request.get_json())
     job_id = service_methods.submit_job(get_dao(current_app), job)
     return json.dumps({"job_id": job_id})
 
+
 @app.route("/api/get_work/<int:work_queue>/<string:worker>", methods=["GET"])
 def get_work_item(work_queue, worker):
-
-    #TODO
     work_item = service_methods.get_work_item(get_dao(current_app), work_queue, worker)
-    #TODO
+    return json.dumps(work_item_to_response(work_item))
 
-@app.route("/api/set_dag/<string:job_id>")
-def set_dag_for_job(job_id, methods=["POST"]):
-    pass
+
+@app.route("/api/set_dag/<int:work_queue>/<string:job_id>", methods=["POST"])  # TODO need to decide soon if work queues are ints or strings on the API
+def set_dag_for_job(work_queue, job_id):
+    dag = read_dag_from_request(request.get_json())
+    service_methods.set_dag_for_job(get_dao(current_app), job_id, dag, work_queue)
+
 
 @app.route("/api/complete_task/<string:job_id>/<string:task_id>", methods=["POST"])
 def complete_task(job_id, task_id):

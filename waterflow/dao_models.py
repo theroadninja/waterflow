@@ -22,7 +22,7 @@ class FetchDagTask:  # TODO rename to FetchDagAssignment?
     Info about a job needed to fetch the dag.
     """
     job_id: str
-    job_input64: str
+    job_input64: str   # TODO need job_input64_v also!
     service_pointer: str
     work_queue: int
     worker: str

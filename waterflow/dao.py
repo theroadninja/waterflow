@@ -218,7 +218,7 @@ class DagDao:
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
                 fetch_sql = """
-                SELECT jobs.job_id, jobs.job_input, jobs.service_pointer, jobs.work_queue
+                SELECT jobs.job_id, TO_BASE64(jobs.job_input), jobs.service_pointer, jobs.work_queue
                 FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
                 WHERE job_executions.job_id is NULL AND jobs.work_queue = %s
                 LIMIT %s
@@ -241,7 +241,6 @@ class DagDao:
 
         return jobs
 
-    #def set_dag(self, job_id: str, dag64: str, tasks: List[Task], task_deps: Dict[str, List[str]]):
     def set_dag(self, job_id: str, dag: Dag, work_queue: int, now_utc: datetime.datetime = None):
         """
         Called when worker has finished fetching the dag.

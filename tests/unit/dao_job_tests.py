@@ -81,6 +81,20 @@ class DaoJobTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dao.add_job(job)
 
+    def test_bytes_vs_strings(self):
+        dao = DagDao(get_conn_pool(), "waterflow")
+        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("A"), tags=["tag"]))
+        tasks = dao.get_and_start_jobs(["worker1"])
+        self.assertTrue(isinstance(tasks[0].job_input64, str))  # FetchDagTask
+
+        dao.set_dag(job_id, make_single_task_dag(), 0)
+        dao.update_task_deps(job_id)
+
+        tasks2 = dao.get_and_start_tasks(["w0"], 0)
+        self.assertEqual(job_id, tasks2[0].job_id)
+        self.assertTrue(isinstance(tasks2[0].task_input64, str))  # TaskAssignment
+        self.assertEqual("A", waterflow.from_base64_str(tasks2[0].task_input64))
+
     def test_jobs(self):
         conn_pool = get_conn_pool()
         dao = DagDao(conn_pool, "waterflow")
@@ -114,6 +128,7 @@ class DaoJobTests(unittest.TestCase):
         self.assertEqual(1, len(tasks))
         self.assertEqual(4, dao.count_jobs(PENDING))
         self.assertEqual(1, dao.count_jobs(FETCHING))
+        self.assertTrue(isinstance(tasks[0].job_input64, str))
 
         tasks = dao.get_and_start_jobs(["worker", "worker"])
         dag_fetch_tasks += tasks
