@@ -8,6 +8,7 @@
 * test effect of putting all VARCHAR values at max length.
 * test whether having lots of tags creating a performance issue.
 * test not having an index on job_tags.tag
+* test not having an index on job.created_utc
 
 ## Single Threaded Tests
 

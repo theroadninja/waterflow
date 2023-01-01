@@ -8,16 +8,16 @@ from dataclasses import dataclass
 import datetime
 from typing import List, Dict, Optional
 
-class TaskEligibilityState(IntEnum):
-    BLOCKED = 0
-    READY = 1  # or "AVAILABLE" ?  ALLOWED?
-    PAUSED = 2
-
-class TaskExecState(IntEnum):
-    PENDING = 0   # needed to allow retries.  row doesn't exist == pending, also set to pending on retry...
-    RUNNING = 1
-    SUCCEEDED = 2
-    FAILED = 3
+# class TaskEligibilityState(IntEnum):
+#     BLOCKED = 0
+#     READY = 1  # or "AVAILABLE" ?  ALLOWED?
+#     PAUSED = 2
+#
+# class TaskExecState(IntEnum):
+#     PENDING = 0   # needed to allow retries.  row doesn't exist == pending, also set to pending on retry...
+#     RUNNING = 1
+#     SUCCEEDED = 2
+#     FAILED = 3
 
 class TaskState(IntEnum):
     """
@@ -31,9 +31,9 @@ class TaskState(IntEnum):
     FAILED = 5
 
 
-@dataclass
-class TaskExecution:
-    pass
+# @dataclass
+# class TaskExecution:
+#     pass
 
 
 from waterflow import dao_models

@@ -1,6 +1,7 @@
 """
 Provides a flask interface for the service.
 """
+import dataclasses
 from flask import Flask, current_app, request
 import json
 from typing import Dict
@@ -49,6 +50,19 @@ def something():
     return "Waterflow Flask Server"
 
 
+@app.route("/ui/stats/jobs", methods=["GET"])
+def get_job_stats():
+    job_stats = get_dao(current_app).get_job_stats()
+    # just being lazy; will need a real transform method if we change the internal class:
+    return json.dumps(dataclasses.asdict(job_stats))
+
+@app.route("/ui/stats/tasks", methods=["GET"])
+def get_task_stats():
+    task_stats = get_dao(current_app).get_task_stats()
+    # just being lazy; will need a real transform method if we change the internal class:
+    return json.dumps(dataclasses.asdict(task_stats))
+
+
 @app.route("/api/submit_job/<int:work_queue>", methods=["POST"])  # TODO /api/ to distinguish from /ui/ methods
 def submit_job(work_queue):
     job = read_pending_job(work_queue, request.get_json())
@@ -70,6 +84,7 @@ def set_dag_for_job(work_queue, job_id):
 
 @app.route("/api/complete_task/<string:job_id>/<string:task_id>", methods=["POST"])
 def complete_task(job_id, task_id):
-    pass
+    # NOTE:  this is also for "force-complete"
+    service_methods.complete_task(get_dao(current_app), job_id, task_id)
 
 

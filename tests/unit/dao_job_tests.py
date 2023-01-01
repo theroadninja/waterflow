@@ -1,4 +1,5 @@
 import base64
+import datetime
 import re
 import unittest
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from waterflow import to_base64_str
 from waterflow import event_codes
 from waterflow.job import JobExecutionState, Dag
 from waterflow.dao import DagDao
-from waterflow.dao_models import PendingJob
+from waterflow.dao_models import PendingJob, JobStats
 from waterflow.task import Task, TaskState
 from .test_utils import get_conn_pool, path_to_sql, task_view1_list_to_dict, drop_and_recreate_database
 
@@ -516,6 +517,69 @@ class DaoJobTests(unittest.TestCase):
         fetch_tasks = dao.get_and_start_jobs(["w0", "w1", "w2"], work_queue=0)
         self.assertEqual(1, len(fetch_tasks))
         self.assertEqual(job_id0, fetch_tasks[0].job_id)
+
+    def test_prune_jobs(self):
+        dao = DagDao(get_conn_pool(), "waterflow")
+
+        ji = waterflow.to_base64_str("JB")
+        job_id0 = dao.add_job(PendingJob(job_name="j0", job_input64=ji, work_queue=0), now_utc=datetime.datetime(2020, 1, 1))
+        job_id1 = dao.add_job(PendingJob(job_name="j0", job_input64=ji, work_queue=0), now_utc=datetime.datetime(2020, 1, 1))
+        job_id2 = dao.add_job(PendingJob(job_name="j0", job_input64=ji, work_queue=0),
+                              now_utc=datetime.datetime(2020, 1, 1))
+        job_id3 = dao.add_job(PendingJob(job_name="j0", job_input64=ji, work_queue=0), now_utc = datetime.datetime(2020, 1, 3))
+        self.assertEqual(4, dao.count_jobs(int(JobExecutionState.PENDING)))
+
+        count = dao.prune_jobs(datetime.datetime(2020, 1, 2), limit=1)
+        self.assertEqual(1, count)
+        self.assertEqual(3, dao.count_jobs(int(JobExecutionState.PENDING)))
+
+        count = dao.prune_jobs(datetime.datetime(2020, 1, 2), limit=100)
+        self.assertEqual(2, count)
+        self.assertEqual(1, dao.count_jobs(int(JobExecutionState.PENDING)))
+
+        self.assertEqual(job_id3, dao.get_job_info(job_id3).job_id)
+
+        with self.assertRaises(Exception):
+            dao.get_job_info(job_id0).job_id
+
+        with self.assertRaises(Exception):
+            dao.get_job_info(job_id1).job_id
+
+        with self.assertRaises(Exception):
+            dao.get_job_info(job_id2).job_id
+
+    def test_job_stats(self):
+        dao = DagDao(get_conn_pool(), "waterflow")  # TODO db name should not be hardcoded here
+
+        self.assertEqual(JobStats(0, 0, 0, 0, 0), dao.get_job_stats())
+
+        ji = waterflow.to_base64_str("JB")
+        job_ids = [dao.add_job(PendingJob(job_name=f"j{j}", job_input64=ji, work_queue=0)) for j in range(15)]
+        self.assertEqual(JobStats(15, 0, 0, 0, 0), dao.get_job_stats())
+
+        fetch_tasks = dao.get_and_start_jobs(["w0", "w1", "w2", "w3", "w4", "w5", "w6","w7", "w8", "w9"])
+        self.assertEqual(JobStats(5, 10, 0, 0, 0), dao.get_job_stats())
+
+        failed_jobs = fetch_tasks[:1]
+        for task in failed_jobs:
+            dao.fail_job(task.job_id, event_codes.JOB_FAILED, "dag fetch failed", None)
+        self.assertEqual(JobStats(5, 9, 0, 0, 1), dao.get_job_stats())
+
+        running_jobs = fetch_tasks[2:7]
+        for task in running_jobs:
+            dao.set_dag(task.job_id, make_single_task_dag(), 0)
+            dao.update_task_deps(task.job_id)
+        self.assertEqual(JobStats(5, 4, 5, 0, 1), dao.get_job_stats())
+
+        tasks = dao.get_and_start_tasks(["w0", "w1"], 0)
+        self.assertEqual(2, len(tasks))
+        for task in tasks:
+            dao.complete_task(task.job_id, task.task_id)
+            dao.update_task_deps(task.job_id)
+            dao.update_job_state(task.job_id)
+        self.assertEqual(JobStats(5, 4, 3, 2, 1), dao.get_job_stats())
+
+
 
 
     # TODO - test large numbers of workers!  (maybe use multiple linear jobs)

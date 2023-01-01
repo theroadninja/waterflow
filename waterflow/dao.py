@@ -1,13 +1,14 @@
 import datetime
+import pytz
 from typing import List, Dict
 import uuid
 
 from waterflow.exceptions import InvalidJobError, InvalidTaskState, InvalidJobState, NotImplementedYet
-from waterflow.task import Task, TaskState, TaskExecState, TaskView1
+from waterflow.task import Task, TaskState, TaskView1
 import waterflow.task
 from waterflow.job import JobExecutionState, Dag, JobView1
-from waterflow import event_codes
-from waterflow.dao_models import PendingJob, FetchDagTask, TaskAssignment
+from waterflow import check_utc_or_unaware
+from waterflow.dao_models import PendingJob, FetchDagTask, TaskAssignment, JobStats, TaskStats
 
 WORKER_LENGTH = 255  # must match the varchar length in the db schema
 
@@ -99,6 +100,50 @@ class DagDao:
                 rows = cursor.fetchall()
                 return rows[0][0]
 
+    def get_job_stats(self):
+        sql = """
+        SELECT IFNULL(job_executions.state, 0) as state2, count(*) as CNT
+        FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id GROUP BY state2;
+        """
+        results = {}
+        with self.conn_pool.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql)
+                rows = cursor.fetchall()
+                for state, count in rows:
+                    results[int(state)] = count
+
+        return JobStats(
+            pending_count = results.get(int(JobExecutionState.PENDING)) or 0,
+            fetching_count = results.get(int(JobExecutionState.DAG_FETCH)) or 0,
+            running_count = results.get(int(JobExecutionState.RUNNING)) or 0,
+            succeeded = results.get(int(JobExecutionState.SUCCEEDED)) or 0,
+            failed = results.get(int(JobExecutionState.FAILED)) or 0,
+        )
+
+    def get_task_stats(self):
+        sql = """
+        SELECT tasks.state, COUNT(*) as cnt FROM tasks;
+        """
+        results = {}
+        with self.conn_pool.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql)
+                rows = cursor.fetchall()
+                # aggregation causes a useless row w/ null state if table is empty
+                if not (cursor.rowcount == 1 and rows[0][0] is None):
+                    for state, count in rows:
+                        results[int(state)] = count
+
+        return TaskStats(
+            blocked_count=results.get(int(TaskState.BLOCKED)) or 0,
+            pending_count=results.get(int(TaskState.PENDING)) or 0,
+            paused_count=results.get(int(TaskState.PAUSED)) or 0,
+            running_count=results.get(int(TaskState.RUNNING)) or 0,
+            succeeded_count=results.get(int(TaskState.SUCCEEDED)) or 0,
+            failed_count=results.get(int(TaskState.FAILED)) or 0,
+        )
+
     def add_job(self, job: PendingJob, now_utc: datetime.datetime = None):
         """
         Called by scheduer/trigger to start a job (to enqueue it for starting).
@@ -142,6 +187,26 @@ class DagDao:
                     conn.commit()
 
         return job_id
+
+    def prune_jobs(self, cutoff_date: datetime.datetime, limit: int) -> int:
+        """
+        Deletes old jobs from the database.
+
+        WARNING:  this does not check job state first, and does not try to delete in FIFO order.
+
+        :returns # of jobs removed
+        """
+        sql = """
+        DELETE FROM JOBS WHERE jobs.created_utc < %s LIMIT %s;
+        """
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        check_utc_or_unaware(cutoff_date)
+        with self.conn_pool.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params=(cutoff_date.strftime(DATETIME_COL_FORMAT), int(limit)))
+                conn.commit()
+                return cursor.rowcount
 
     def get_job_info(self, job_id) -> JobView1:
         sql = """

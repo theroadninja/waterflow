@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     job_input_v TINYINT UNSIGNED, -- version of serialization used for job_input BLOB
     service_pointer VARCHAR(128),  -- any UTF8 string (json or base64)
     work_queue TINYINT UNSIGNED DEFAULT 0,  -- TODO remove default value
-    INDEX (work_queue)
+    INDEX (work_queue),
+    INDEX (created_utc)
 );
 
 

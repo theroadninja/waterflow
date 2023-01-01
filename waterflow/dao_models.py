@@ -71,3 +71,22 @@ class Dag:
     raw_dagv: int  # version for the serialization of the dag
     tasks: Task
     adj_list: Dict[str, List[str]]
+
+
+@dataclass
+class JobStats:
+    pending_count: int
+    fetching_count: int
+    running_count: int
+    succeeded: int
+    failed: int
+
+
+@dataclass
+class TaskStats:
+    blocked_count: int
+    pending_count: int
+    paused_count: int
+    running_count: int
+    succeeded_count: int
+    failed_count: int

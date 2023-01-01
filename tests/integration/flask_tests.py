@@ -47,10 +47,15 @@ def test_run_job(url_base):
 
     # finish fetching the dag
 
+def test_get_stats(url_base):
+    resp = requests.get(f"{url_base}/ui/stats/jobs")
+    print(resp)
+
 
 
 if __name__ == "__main__":
     URL_BASE = "http://localhost:80"
 
-    test_submit_job(URL_BASE)
-    test_run_job(URL_BASE)
+    #test_submit_job(URL_BASE)
+    #test_run_job(URL_BASE)
+    test_get_stats(URL_BASE)

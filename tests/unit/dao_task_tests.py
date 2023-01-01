@@ -3,7 +3,7 @@ import unittest
 
 import waterflow
 from waterflow.dao import DagDao
-from waterflow.dao_models import PendingJob
+from waterflow.dao_models import PendingJob, TaskStats
 from waterflow.task import TaskState
 from waterflow.job import JobExecutionState
 from waterflow.exceptions import InvalidTaskState
@@ -225,6 +225,11 @@ class DaoTaskTests(unittest.TestCase):
         dao.keep_task_alive(job_id, task_id, now_utc2)
         self.assertEqual(now_utc2, dao.get_tasks_by_job(job_id)[0].updated_utc)
         self.assertEqual(int(TaskState.RUNNING), get_task_state(dao, job_id, task_id))
+
+    def test_get_task_stats(self):
+        dao = DagDao(get_conn_pool(), "waterflow")  # TODO db name should not be hardcoded here
+
+        self.assertEqual(TaskStats(0, 0, 0, 0, 0, 0), dao.get_task_stats())
 
     def test_service_pointer(self):
         pass  # TODO write test
