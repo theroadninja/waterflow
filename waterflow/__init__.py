@@ -1,5 +1,6 @@
 import base64
 import datetime
+import logging
 import uuid
 from mysql.connector import connect, pooling
 from .mysql_config import MysqlConfig
@@ -39,7 +40,8 @@ def get_connection_pool(dbconf, pool_name, pool_size=32):
 
     # NOTE:  somewhere on the internet said that the mysql connector supports a max of 32
     # but the flask server can blow through more than 100 because I can't get it to share the conn pool object.
-
+    logger = logging.getLogger("server")
+    logger.info(f"getting connection pool host={dbconf.hostname}")
     return pooling.MySQLConnectionPool(
         pool_name=pool_name,
         pool_size=pool_size,  # mysql connector supports a max of 32?

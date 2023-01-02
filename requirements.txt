@@ -1,4 +1,4 @@
 flask
-mysql-connector-python
+mysql-connector-python==8.0.31
 pytz
 requests
