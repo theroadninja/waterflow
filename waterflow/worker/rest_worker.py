@@ -43,8 +43,16 @@ def main_loop(stop_signal: StopSignal, thread_index: int, config: WorkerConfig):
         try:
             # look for work
             resp = requests.get(f"{config.url_base}/api/get_work/{config.work_queue}/{full_worker_name}")
-            # TODO
-            work_item = WorkItem.from_json_dict(json.loads(resp.content))
+            resp.raise_for_status()
+            # TODO intelligently back off on 429s
+
+            try:
+                work_item = WorkItem.from_json_dict(json.loads(resp.content))
+            except json.decoder.JSONDecodeError as ex:
+                logger.error(f"could not parse: {resp.content}")
+                raise ex
+
+
             if work_item.fetch_task:
                 job_id = work_item.fetch_task.job_id
                 logger.info(f"thread={thread_index} got a dag fetch task for job {job_id}")
@@ -61,14 +69,21 @@ def main_loop(stop_signal: StopSignal, thread_index: int, config: WorkerConfig):
                 # TODO should the server automatically re-assign dag fetch tasks if they've been idle for 10 minutes?
 
             elif work_item.run_task:
-                logger.info(f"thread={thread_index} got task {work_item.run_task.task_id}")
-                time.sleep(10)  # simulate running the task
+                job_id = work_item.run_task.job_id
+                task_id = work_item.run_task.task_id
+                logger.info(f"thread={thread_index} got task {task_id}")
+
+                # TODO bring back up to 10
+                time.sleep(5)  # simulate running the task
+
                 logger.info("task {work_item.run_task.task_id} complete")
 
                 # TODO need to mark the task complete
+                resp = requests.post(f"{config.url_base}/api/complete_task/{job_id}/{task_id}")
+                resp.raise_for_status()
 
             else:
-                print("got nothing")
+                print(f"thread={thread_index} got nothing")
                 time.sleep(random.randint(config.sleep_sec_min, config.sleep_sec_max))
 
             pass

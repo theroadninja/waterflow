@@ -35,9 +35,13 @@ def check_utc_or_unaware(d: datetime.datetime):
 
 
 def get_connection_pool(dbconf, pool_name):
+
+    # NOTE:  somewhere on the internet said that the mysql connector supports a max of 32
+    # but the flask server can blow through more than 100 because I can't get it to share the conn pool object.
+
     return pooling.MySQLConnectionPool(
         pool_name=pool_name,
-        pool_size=5,  # max for mysql?  default is 5
+        pool_size=10,  # mysql connector supports a max of 32?
         pool_reset_session=True,
         host=dbconf.hostname,
         database=dbconf.dbname,

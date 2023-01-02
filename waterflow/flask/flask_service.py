@@ -2,12 +2,13 @@
 Provides a flask interface for the service.
 """
 import dataclasses
-from flask import Flask, current_app, request
+from flask import Flask, current_app, request, Response
 import json
 import logging
 from waterflow import get_connection_pool_from_file, service_methods
 from waterflow.dao import DagDao
 from .flask_adapter import read_pending_job, work_item_to_response, read_dag_from_request
+import mysql
 
 app = Flask("Waterflow Flask")
 
@@ -34,6 +35,7 @@ def get_connection_pool(app):
     # cant figure out a better way to do this -- flask.g doesnt work.
     global global_db_pool
     if not global_db_pool:
+        print("*\n*\n*\nCREATING NEW CONNECTION POOL*\n*\n*\n")
         global_db_pool = get_connection_pool_from_file(app.config["mysql_config_file"], app.config["mysql_pool_name"])
     return global_db_pool
 
@@ -75,8 +77,14 @@ def submit_job(work_queue):
 
 @app.route("/api/get_work/<int:work_queue>/<string:worker>", methods=["GET"])
 def get_work_item(work_queue, worker):
-    work_item = service_methods.get_work_item(get_dao(current_app), work_queue, worker)
-    return json.dumps(work_item_to_response(work_item))
+    logger = logging.getLogger("server")
+    logger.info("received get_work call")
+    try:
+        work_item = service_methods.get_work_item(get_dao(current_app), work_queue, worker)
+        return json.dumps(work_item_to_response(work_item))
+    except mysql.connector.errors.PoolError as ex:
+        logger.exception(str(ex))
+        return Response(str(ex), status=429, mimetype="application/text")
 
 
 # NOTE:  a 400 error could be caused by invalid json
@@ -95,5 +103,6 @@ def set_dag_for_job(work_queue, job_id):
 def complete_task(job_id, task_id):
     # NOTE:  this is also for "force-complete"
     service_methods.complete_task(get_dao(current_app), job_id, task_id)
+    return "{}"
 
 

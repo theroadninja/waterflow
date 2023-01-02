@@ -2,6 +2,7 @@
 This is the main code for the server.
 """
 import datetime
+import logging
 
 from waterflow.core import make_id
 from waterflow.dao import DagDao
@@ -68,9 +69,12 @@ def get_work_item(dao: DagDao, work_queue: str, worker: str, now_utc=None) -> Wo
     DAGs are prioritized because those calls are expected to take millis or seconds, while running tasks can take up to
     minutes or hours.
     """
+    logger = logging.getLogger("server_methods")
+
     now_utc = now_utc or datetime.datetime.utcnow()
 
     # 1. dag fetch tasks
+    logger.info("calling get_and_start_jobs()")
     fetch_tasks = dao.get_and_start_jobs([worker], work_queue, now_utc)
     if len(fetch_tasks) == 1:
         return WorkItem(dag_fetch=fetch_tasks[0])
@@ -78,6 +82,7 @@ def get_work_item(dao: DagDao, work_queue: str, worker: str, now_utc=None) -> Wo
         raise Exception("too many fetch tasks returned by DAO")
 
     # 2. tasks
+    logger.info("calling get_and_start_tasks()")
     tasks = dao.get_and_start_tasks([worker], work_queue, now_utc)
     if len(tasks) == 1:
         return WorkItem(run_task=tasks[0])
@@ -140,6 +145,7 @@ def set_dag_for_job_REST(dao: DagDao, job_id: str, dag: RestDag, work_queue: str
         adj_list=adj_list,
     )
     dao.set_dag(job_id, internal_dag, work_queue, now_utc)
+    dao.update_task_deps(job_id)
 
 
 def complete_task(dao: DagDao, job_id, task_id):

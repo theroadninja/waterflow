@@ -122,8 +122,10 @@ class DagDao:
         )
 
     def get_task_stats(self):
+
+        # TODO unit tests did not fail when "GROUP BY state" was missing.
         sql = """
-        SELECT tasks.state, COUNT(*) as cnt FROM tasks;
+        SELECT tasks.state, COUNT(*) as cnt FROM tasks GROUP BY state;
         """
         results = {}
         with self.conn_pool.get_connection() as conn:
@@ -487,10 +489,12 @@ class DagDao:
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
 
-                conn.start_transaction(readonly=False)
+                #cursor.execute("LOCK TABLES tasks WRITE, tasks as tasks2 WRITE, task_deps WRITE;")
+                #conn.start_transaction(readonly=False)
 
                 cursor.execute(ready_sql, (job_id,))
                 rows = cursor.fetchall()
+                conn.commit()
 
                 task_ids = [row[0] for row in rows]
 
@@ -506,6 +510,7 @@ class DagDao:
 
                 # end the transaction either way
                 conn.commit()  # TODO do we need a try catch to rollback?  probably not b/c last op is the write
+                #cursor.execute("UNLOCK TABLES;")
 
 
     def update_job_state(self, job_id):  #a.k.a. "all tasks succeeded"
@@ -630,7 +635,8 @@ class DagDao:
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
 
-                conn.start_transaction()
+                cursor.execute("LOCK TABLES tasks WRITE;")
+                # conn.start_transaction()
 
                 sql = """
                 select tasks.job_id, tasks.task_id, tasks.task_name, TO_BASE64(tasks.task_input), tasks.task_input_v, 
@@ -658,6 +664,7 @@ class DagDao:
                     # TODO and then insert into some kind of `task_ownership` or `task_assignment` table
 
                 conn.commit()
+                cursor.execute("UNLOCK TABLES;")
 
                 return tasks
 
