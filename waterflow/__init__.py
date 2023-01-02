@@ -48,6 +48,7 @@ def get_connection_pool(dbconf, pool_name, pool_size=32):
         database=dbconf.dbname,
         user=dbconf.username,
         password=dbconf.password,
+        port=3306,  # TODO
     )
 
 def get_connection_pool_from_file(filename, pool_name="waterflow_dao", pool_size=32):
