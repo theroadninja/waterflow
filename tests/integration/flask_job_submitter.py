@@ -27,6 +27,6 @@ def submit_job(url_base, work_queue, job_input):
 
 if __name__ == "__main__":
     url_base = "http://127.0.0.1:80"  # warning:  "localhost" can cause a use perf hit due to IPV6
-    for i in range(20):
+    for i in range(8000):
         submit_job(url_base, 0, str(i))
     pass

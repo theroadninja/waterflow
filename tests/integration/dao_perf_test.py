@@ -4,32 +4,14 @@ Performance test against the dao alone.
 import time
 
 import waterflow
-from waterflow import to_base64_str
+from waterflow import to_base64_str, StopWatch
 import waterflow.dao
 from waterflow.dao_models import PendingJob
 from waterflow.task import Task, TaskState
 from waterflow.job import Dag
 
 
-class StopWatch:
-    # wall clock time
-    def __init__(self):
-        self.started = time.time()
-        self.stopped = None
 
-    def stop(self):
-        self.stopped = time.time()
-
-    def elapsed_sec(self) -> float:
-        stopped = self.stopped or time.time()
-        return stopped - self.started
-
-    def __str__(self):
-        sec = self.elapsed_sec()
-        return f"{sec} seconds"
-
-    def __repr__(self):
-        return self.__str__()
 
 
 def make_test_dag10():

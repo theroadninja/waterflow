@@ -13,11 +13,12 @@ import mysql
 app = Flask("Waterflow Flask")
 
 
-def before_first_request(app, mysql_config_file, pool_name, dbname):
+def before_first_request(app, mysql_config_file, pool_name, dbname, pool_size=32):
 
     app.config["mysql_config_file"] = mysql_config_file
     app.config["mysql_pool_name"] = pool_name
     app.config["dbname"] = dbname
+    app.config["mysql_pool_size"] = pool_size
 
     # # apparently the @app.before_first_request notation is deprecated
     # with app.app_context():
@@ -36,7 +37,11 @@ def get_connection_pool(app):
     global global_db_pool
     if not global_db_pool:
         print("*\n*\n*\nCREATING NEW CONNECTION POOL*\n*\n*\n")
-        global_db_pool = get_connection_pool_from_file(app.config["mysql_config_file"], app.config["mysql_pool_name"])
+        global_db_pool = get_connection_pool_from_file(
+            app.config["mysql_config_file"],
+            app.config["mysql_pool_name"],
+            pool_size=app.config["mysql_pool_size"],
+        )
     return global_db_pool
 
 
@@ -94,9 +99,13 @@ def set_dag_for_job(work_queue, job_id):
     logger.info(f"received set_dag request for {job_id}")
     dag = read_dag_from_request(request.get_json())
     logger.info("make it past get_json()")
-    service_methods.set_dag_for_job_REST(get_dao(current_app), job_id, dag, work_queue)
-    logger.info("returned from set_dag_for_job_REST()")
-    return "{}"  # need to return someting?
+    try:
+        service_methods.set_dag_for_job_REST(get_dao(current_app), job_id, dag, work_queue)
+        logger.info("returned from set_dag_for_job_REST()")
+        return "{}"  # need to return someting?
+    except mysql.connector.errors.PoolError as ex:
+        logger.exception(str(ex))
+        return Response(str(ex), status=429, mimetype="application/text")
 
 
 @app.route("/api/complete_task/<string:job_id>/<string:task_id>", methods=["POST"])

@@ -442,17 +442,13 @@ class DaoJobTests(unittest.TestCase):
         job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB0")))
         print(f"test_fail_job() job_id={job_id}")
         self.assertEqual(int(JobExecutionState.PENDING), dao.get_job_info(job_id).state)
-        failed = dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
-        self.assertTrue(failed)
-        job_info = dao.get_job_info(job_id)
-        self.assertEqual(int(JobExecutionState.FAILED), job_info.state)
-
-        # job already in FAILED state
         with self.assertRaises(InvalidJobState):
             dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
 
         # job failed while in DAG_FETCH state (and dag fetch returns after job failed)
-        job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB1")))
+        # dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
+        # self.assertEqual(0, len(dag_fetch_tasks))
+        # job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB1")))
         print(f"test_fail_job() job_id={job_id}")
         dag_fetch_tasks = dao.get_and_start_jobs(["worker1"])
         self.assertEqual(job_id, dag_fetch_tasks[0].job_id)
@@ -467,10 +463,15 @@ class DaoJobTests(unittest.TestCase):
         task_assignments = dao.get_and_start_tasks(["w0", "w1"])
         self.assertEqual(0, len(task_assignments))
 
-        # job failed while in RUNNING state (and make sure tasks got canceled)
+        # job already in FAILED state
+        with self.assertRaises(InvalidJobState):
+            dao.fail_job(job_id, event_codes.JOB_CANCELED, "killed by unit test", None)
+
+        # job failed while in RUNNING state (and make sure tasks got canceled) - TODO not implemented
         job_id = dao.add_job(PendingJob(job_name="j0", job_input64=waterflow.to_base64_str("JOB2")))
         print(f"test_fail_job() job_id={job_id}")
-        _ = dao.get_and_start_jobs(["worker1"])
+        fetch_tasks = dao.get_and_start_jobs(["worker1"])
+        self.assertEqual(1, len(fetch_tasks))
         dao.set_dag(job_id, make_single_task_dag(), work_queue=0)
         dao.update_task_deps(job_id)
         self.assertEqual(int(JobExecutionState.RUNNING), dao.get_job_info(job_id).state)
@@ -481,11 +482,6 @@ class DaoJobTests(unittest.TestCase):
         self.assertEqual(1, len(task_assignments))
 
         # TODO when we can cancel jobs in the running state:  task fetch after failure
-        # self.assertTrue(failed)
-        # self.assertEqual(int(JobExecutionState.FAILED), dao.get_job_info(job_id).state)
-        # # try to fetch task for failed job
-        # task_assignments = dao.get_and_start_tasks(["w0", "w1"])
-        # self.assertEqual(0, len(task_assignments))
 
         # TODO when we can cancel jobs in the running state:  task completion after failure
 

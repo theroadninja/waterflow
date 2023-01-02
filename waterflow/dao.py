@@ -268,17 +268,13 @@ class DagDao:
                 return tasks
 
     # a.k.a. get_work_1()
-    def get_and_start_jobs(self, workers: List[str], work_queue=0, now_utc=None) -> List[FetchDagTask]:
+    def get_and_start_jobs_OLD(self, workers: List[str], work_queue=0, now_utc=None) -> List[FetchDagTask]:
         """
         Called to get fetch-dag tasks for workers, which starts a job.
         """
         if not isinstance(work_queue, int):
             raise ValueError("work queue must be an int")
         now_utc = now_utc or datetime.datetime.utcnow()
-
-        # TODO add a work_queue column!
-        # TODO add created_utc and last_updated_utc columns!
-
         self._check_worker_args(workers)  # TODO unit test this being enforced
 
         jobs = []
@@ -320,6 +316,71 @@ class DagDao:
 
         return jobs
 
+    def get_and_start_jobs(self, workers: List[str], work_queue=0, now_utc=None) -> List[FetchDagTask]:
+        """
+        Called to get fetch-dag tasks for workers, which starts a job.
+        """
+        if not isinstance(work_queue, int):
+            raise ValueError("work queue must be an int")
+        now_utc = now_utc or datetime.datetime.utcnow()
+        self._check_worker_args(workers)  # TODO unit test this being enforced
+
+        jobs = []
+        with self.conn_pool.get_connection() as conn:
+            with conn.cursor() as cursor:
+
+                conn.start_transaction()
+
+                # 1. fancy transaction to pull rows, treating the table like a queue
+                fetch_sql = """
+                SELECT jobs.job_id FROM jobs where jobs.processing = 0 and jobs.work_queue = %s
+                LIMIT %s
+                FOR UPDATE;
+                """  # TODO add "SKIP LOCKED" here for performance
+                cursor.execute(fetch_sql, params=(work_queue, len(workers),))
+                rows = cursor.fetchall()
+                if len(rows) == 0:
+                    return []
+                job_ids = [row[0] for row in rows]
+
+                markers = self._markers(len(job_ids))
+                update_sql = f"UPDATE jobs SET jobs.processing = 1 WHERE jobs.job_id in ({markers});"
+                cursor.execute(update_sql, params=tuple(job_ids))
+                if cursor.rowcount != len(job_ids):
+                    raise Exception("something went wrong")
+                # TODO do we need to commit here?
+
+                # 2. get the data we actually needed
+                fetch_sql = f"""
+                SELECT jobs.job_id, TO_BASE64(jobs.job_input), jobs.service_pointer, jobs.work_queue
+                FROM jobs WHERE jobs.job_id in ({markers})
+                """
+                cursor.execute(fetch_sql, params=tuple(job_ids))
+                rows = cursor.fetchall()
+                job_ids = []
+                for i, row in enumerate(rows):
+                    job_id, job_input64, service_pointer, work_queue = row
+                    job_ids.append(job_id)
+                    jobs.append(FetchDagTask(job_id, job_input64, service_pointer, work_queue, worker=workers[i]))
+
+                # TODO test randomly throwing exceptions here!  verify that the update to the processed column is rolled back
+
+                sql = """
+                insert into job_executions (job_id, created_utc, updated_utc, state, worker, dag, work_queue)
+                values (%s, %s, %s, %s, %s, NULL, %s);
+                """
+                for fetch_task in jobs:
+                    now_s = now_utc.strftime(DATETIME_COL_FORMAT)
+                    params = (
+                    fetch_task.job_id, now_s, now_s, int(JobExecutionState.DAG_FETCH), fetch_task.worker, work_queue)
+                    cursor.execute(sql, params=params)
+
+                conn.commit()
+
+                return jobs
+
+
+
     def set_dag(self, job_id: str, dag: Dag, work_queue: int, now_utc: datetime.datetime = None):
         """
         Called when worker has finished fetching the dag.
@@ -355,7 +416,7 @@ class DagDao:
                 cursor.execute(sql, params=params)
                 if cursor.rowcount == 0:
                     conn.rollback()
-                    raise InvalidJobState(f"job {job_id} does not exist or is in the wrong state")
+                    raise InvalidJobState(f"job {job_id} does not exist or is in the wrong state for set_dag()")
 
                 sql = """
                 insert into `tasks` (job_id, task_id, created_utc, updated_utc, state, task_input, task_input_v, service_pointer, work_queue)
@@ -423,12 +484,16 @@ class DagDao:
                             raise Exception("something went wrong")
                     elif state is None:
                         # no row b/c job is PENDING (dag fetch hasnt started)
-                        sql = """
-                        INSERT INTO job_executions (job_id, created_utc, updated_utc, state) VALUES (%s, %s, %s, %s);
-                        """
-                        cursor.execute(sql, params=(job_id, now_s, now_s, JOB_FAILED))
-                        if cursor.rowcount != 1:
-                            raise Exception("something went wrong")
+                        # TODO consider supporting this in the future
+
+                        raise InvalidJobState("cannot change pending job state to failed")
+
+                        # sql = """
+                        # INSERT INTO job_executions (job_id, created_utc, updated_utc, state) VALUES (%s, %s, %s, %s);
+                        # """
+                        # cursor.execute(sql, params=(job_id, now_s, now_s, JOB_FAILED))
+                        # if cursor.rowcount != 1:
+                        #     raise Exception("something went wrong")
                     else:
                         # not allowed to change the state
                         raise InvalidJobState("cannot change job state to failed")
@@ -635,13 +700,14 @@ class DagDao:
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
 
-                cursor.execute("LOCK TABLES tasks WRITE;")
-                # conn.start_transaction()
+                #cursor.execute("LOCK TABLES tasks WRITE;")
+                conn.start_transaction()
 
                 sql = """
                 select tasks.job_id, tasks.task_id, tasks.task_name, TO_BASE64(tasks.task_input), tasks.task_input_v, 
                 tasks.service_pointer from tasks
-                where tasks.state = 1 limit %s;
+                where tasks.state = 1 limit %s
+                FOR UPDATE;
                 """
                 cursor.execute(sql, params=(len(workers),))
                 rows = cursor.fetchall()
@@ -664,7 +730,7 @@ class DagDao:
                     # TODO and then insert into some kind of `task_ownership` or `task_assignment` table
 
                 conn.commit()
-                cursor.execute("UNLOCK TABLES;")
+                #cursor.execute("UNLOCK TABLES;")
 
                 return tasks
 

@@ -8,9 +8,11 @@ if __name__ == "__main__":
     logger.info("Starting Worker")
 
     url_base = "http://127.0.0.1:80"
-    thread_count = 16  # lots of conn pool issues at 20
+    thread_count = 512  # lots of conn pool issues at 20
     work_queue = 0
     worker = RestWorker(logger, url_base, thread_count, work_queue)
+
+    # TODO make this thing check that it never gets multiple job ids for the same fetch task
 
     worker.main_loop()
 

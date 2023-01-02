@@ -4,6 +4,7 @@ import uuid
 from mysql.connector import connect, pooling
 from .mysql_config import MysqlConfig
 import os
+import time
 
 
 def make_id():
@@ -34,14 +35,14 @@ def check_utc_or_unaware(d: datetime.datetime):
             raise ValueError("datetime must be in UTC")
 
 
-def get_connection_pool(dbconf, pool_name):
+def get_connection_pool(dbconf, pool_name, pool_size=32):
 
     # NOTE:  somewhere on the internet said that the mysql connector supports a max of 32
     # but the flask server can blow through more than 100 because I can't get it to share the conn pool object.
 
     return pooling.MySQLConnectionPool(
         pool_name=pool_name,
-        pool_size=10,  # mysql connector supports a max of 32?
+        pool_size=pool_size,  # mysql connector supports a max of 32?
         pool_reset_session=True,
         host=dbconf.hostname,
         database=dbconf.dbname,
@@ -49,8 +50,28 @@ def get_connection_pool(dbconf, pool_name):
         password=dbconf.password,
     )
 
-def get_connection_pool_from_file(filename, pool_name="waterflow_dao"):
+def get_connection_pool_from_file(filename, pool_name="waterflow_dao", pool_size=32):
     if not os.path.isfile(filename):
         raise Exception(f"Can't find {filename}")
     dbconf = MysqlConfig.from_file(filename)
-    return get_connection_pool(dbconf, pool_name)
+    return get_connection_pool(dbconf, pool_name, pool_size)
+
+class StopWatch:
+    # wall clock time
+    def __init__(self):
+        self.started = time.time()
+        self.stopped = None
+
+    def stop(self):
+        self.stopped = time.time()
+
+    def elapsed_sec(self) -> float:
+        stopped = self.stopped or time.time()
+        return stopped - self.started
+
+    def __str__(self):
+        sec = self.elapsed_sec()
+        return f"{sec} seconds"
+
+    def __repr__(self):
+        return self.__str__()
