@@ -282,6 +282,15 @@ class DagDao:
         jobs = []
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
+
+
+                # TODO probably need to redesign the tables!
+                # 1. put all the large bytes in the jobs table
+                # 2. insert into job_executions when the job is submitted
+
+                cursor.execute("LOCK TABLES jobs WRITE, job_executions WRITE;")
+                # conn.start_transaction()  # gives a "transaction already in progress" error
+
                 fetch_sql = """
                 SELECT jobs.job_id, TO_BASE64(jobs.job_input), jobs.service_pointer, jobs.work_queue
                 FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
@@ -302,7 +311,10 @@ class DagDao:
                     now_s = now_utc.strftime(DATETIME_COL_FORMAT)
                     params = (fetch_task.job_id, now_s, now_s, int(JobExecutionState.DAG_FETCH), fetch_task.worker, work_queue)
                     cursor.execute(sql, params=params)
+
+
                 conn.commit()
+                cursor.execute("UNLOCK TABLES;")
 
         return jobs
 
@@ -321,7 +333,7 @@ class DagDao:
 
         # TODO if the dag is invalid, we need to set it anyway and fail the job
 
-        if not isinstance(dag.raw_dag64, str):
+        if dag.raw_dag64 and not isinstance(dag.raw_dag64, str):
             raise ValueError("dag64 must be a str; if you have bytes call .decode(UTF-8)")
 
         if not waterflow.task.is_valid(dag.tasks, dag.adj_list):

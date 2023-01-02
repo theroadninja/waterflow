@@ -39,7 +39,7 @@ def test_run_job(url_base):
 
     # start fetching the dag
     WORKER = "w0"
-    resp = requests.get(f"{url_base}/api/get_work/{WORK_QUEUE}/{WORKER}", json=request)
+    resp = requests.get(f"{url_base}/api/get_work/{WORK_QUEUE}/{WORKER}", json=request)  # TODO remove json=...
     # "/api/get_work/<int:work_queue>/<string:worker>"
     print(resp.content)
 

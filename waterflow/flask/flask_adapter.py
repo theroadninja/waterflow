@@ -1,8 +1,10 @@
 """
 Code to convert between Flask's representation of a request and the internal data types.
 """
+import json
 from typing import Dict
 from waterflow.dao_models import PendingJob, WorkItem, FetchDagTask, TaskAssignment
+from waterflow.rest import Dag
 
 
 def assert_string(value):
@@ -55,4 +57,6 @@ def work_item_to_response(work_item: WorkItem) -> Dict:
     }
 
 def read_dag_from_request(request_json: Dict):
-    raise Exception("Not Implemented Yet")
+
+    return Dag.from_json_dict(json.loads(request_json))
+

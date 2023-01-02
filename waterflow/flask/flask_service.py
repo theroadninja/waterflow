@@ -4,7 +4,7 @@ Provides a flask interface for the service.
 import dataclasses
 from flask import Flask, current_app, request
 import json
-from typing import Dict
+import logging
 from waterflow import get_connection_pool_from_file, service_methods
 from waterflow.dao import DagDao
 from .flask_adapter import read_pending_job, work_item_to_response, read_dag_from_request
@@ -65,6 +65,9 @@ def get_task_stats():
 
 @app.route("/api/submit_job/<int:work_queue>", methods=["POST"])  # TODO /api/ to distinguish from /ui/ methods
 def submit_job(work_queue):
+    """
+    Returns an empty work item if there is no work.
+    """
     job = read_pending_job(work_queue, request.get_json())
     job_id = service_methods.submit_job(get_dao(current_app), job)
     return json.dumps({"job_id": job_id})
@@ -76,10 +79,16 @@ def get_work_item(work_queue, worker):
     return json.dumps(work_item_to_response(work_item))
 
 
+# NOTE:  a 400 error could be caused by invalid json
 @app.route("/api/set_dag/<int:work_queue>/<string:job_id>", methods=["POST"])  # TODO need to decide soon if work queues are ints or strings on the API
 def set_dag_for_job(work_queue, job_id):
+    logger = logging.getLogger("server")
+    logger.info(f"received set_dag request for {job_id}")
     dag = read_dag_from_request(request.get_json())
-    service_methods.set_dag_for_job(get_dao(current_app), job_id, dag, work_queue)
+    logger.info("make it past get_json()")
+    service_methods.set_dag_for_job_REST(get_dao(current_app), job_id, dag, work_queue)
+    logger.info("returned from set_dag_for_job_REST()")
+    return "{}"  # need to return someting?
 
 
 @app.route("/api/complete_task/<string:job_id>/<string:task_id>", methods=["POST"])

@@ -41,7 +41,7 @@ class TaskAssignment:
 
 @dataclass
 class WorkItem:
-    dag_fetch: FetchDagTask = None
+    dag_fetch: FetchDagTask = None  # TODO rename to 'fetch_task'
     run_task: TaskAssignment = None
 
     def empty(self):

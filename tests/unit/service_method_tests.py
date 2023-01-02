@@ -26,6 +26,35 @@ class ServiceMethodTests(unittest.TestCase):
     def _make_job(cls):
         return PendingJob("j0", to_base64_str("j0"), 0, None, None, WORK_QUEUE)
 
+    def test_transform_adj_list(self):
+        id_map = {
+            1: "A",
+            2: "B",
+            3: "C",
+            4: "D",
+        }
+        adj_list = {
+            1: [2, 3],
+            2: [4],
+            3: [4],
+        }
+        result = service_methods._transform_adj_list(adj_list, id_map)
+        self.assertEqual(3, len(result))
+        self.assertEqual(["B", "C"], sorted(result["A"]))
+        self.assertEqual(["D"], sorted(result["B"]))
+        self.assertEqual(["D"], sorted(result["C"]))
+
+        adj_list = {'0': [1, 2, 3, 4, 5, 6, 7, 8], '1': [9], '2': [9], '3': [9], '4': [9], '5': [9], '6': [9], '7': [9], '8': [9]}
+        id_map = {
+            '0': '42c77f367a554b748a80fd361f88225b', '1': 'c23328d71d844ca88e3b0a5e9126cb7a',
+            '2': 'c7f1ac32fdc645659dbb8733e8142feb', '3': '68df49ff2fc44fbd9d16bd25c209f1ee',
+            '4': '55db12a9ccde45edbe2b81f753433022', '5': '03fd1064f29d493ebeba4bae5188361e',
+            '6': 'cb353db4dfe2447388279cb9154812ed', '7': '38188186233441ef84b28cc3eb9f2c56',
+            '8': '8691a91eb776413896541afb380b3556', '9': 'a82e1524b0c7415d93298405c200c56b',
+        }
+        result = service_methods._transform_adj_list(adj_list, id_map)
+
+
     def test_submit_job(self):
         dao = self._get_dao()
 

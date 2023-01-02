@@ -3,8 +3,10 @@ This is the main code for the server.
 """
 import datetime
 
+from waterflow.core import make_id
 from waterflow.dao import DagDao
-from waterflow.dao_models import PendingJob, WorkItem, Dag
+from waterflow.dao_models import PendingJob, WorkItem, Dag, Task
+from waterflow.rest import Dag as RestDag, Task as RestTask
 
 from waterflow.job import JobView1
 
@@ -68,27 +70,77 @@ def get_work_item(dao: DagDao, work_queue: str, worker: str, now_utc=None) -> Wo
     """
     now_utc = now_utc or datetime.datetime.utcnow()
 
+    # 1. dag fetch tasks
     fetch_tasks = dao.get_and_start_jobs([worker], work_queue, now_utc)
     if len(fetch_tasks) == 1:
         return WorkItem(dag_fetch=fetch_tasks[0])
     elif len(fetch_tasks) > 1:
         raise Exception("too many fetch tasks returned by DAO")
 
+    # 2. tasks
     tasks = dao.get_and_start_tasks([worker], work_queue, now_utc)
     if len(tasks) == 1:
         return WorkItem(run_task=tasks[0])
     elif len(tasks) > 1:
         raise Exception("too many tasks returned by DAO")
 
+    # 3. stale dag fetch tasks?
+    # TODO maybe automatically return dag fetch tasks that are more than 10 minutes old
+
     return WorkItem()  #  TODO unit test this function
 
 
+# TODO this is useless -- it takes the internal models as input, which already have the ids set
 def set_dag_for_job(dao: DagDao, job_id: str, dag: Dag, work_queue: str, now_utc=None):
 
     now_utc = now_utc or datetime.datetime.utcnow()
     dao.set_dag(job_id, dag, work_queue, now_utc)
     dao.update_task_deps(job_id)
     # TODO set a limit of 1024-4096 tasks per job
+
+
+
+def _rest_task_to_internal_task(rest_task: RestTask, task_id: str):
+    return Task(
+        task_id=task_id,
+        task_name=rest_task.task_name,
+        input64=rest_task.input64,
+        input64_v=rest_task.input64_v,
+        service_pointer=rest_task.service_pointer,
+    )
+
+def _transform_adj_list(adj_list_by_index, id_map):
+    """
+    The request identifies tasks by "index" -- an integer that has no meaning outside the scope of the request.  This
+    function translate the adjacency list expressed using indexes to one using the newly-assigned string task ids.
+    """
+    id_map = {int(k): v for k,v in id_map.items()}
+
+    return {
+        id_map[int(task_index)]:  [id_map[int(i)] for i in neighboors]
+        for task_index, neighboors in adj_list_by_index.items()
+    }
+
+
+def set_dag_for_job_REST(dao: DagDao, job_id: str, dag: RestDag, work_queue: str, now_utc=None):
+    now_utc = now_utc or datetime.datetime.utcnow()
+
+    id_map = {}
+    internal_tasks = []
+    for task_index,  in dag.tasks:
+        task_id = make_id()
+        id_map[task_index] = task_id
+        internal_tasks.append(_rest_task_to_internal_task(dag.tasks[task_index], task_id))
+
+    adj_list = _transform_adj_list(dag.adj_list, id_map)  # TODO why were ints transformed into strings?
+    internal_dag = Dag(
+        raw_dag64=None,  # TODO
+        raw_dagv=0,  # TODO
+        tasks=internal_tasks,
+        adj_list=adj_list,
+    )
+    dao.set_dag(job_id, internal_dag, work_queue, now_utc)
+
 
 def complete_task(dao: DagDao, job_id, task_id):
 
