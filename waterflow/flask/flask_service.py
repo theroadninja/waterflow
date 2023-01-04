@@ -57,7 +57,7 @@ def something():
     return "Waterflow Flask Server"
 
 
-@app.route("/ui/stats/jobs", methods=["GET"], strict_slashes=False)
+@app.route("/ui/stats/jobs", methods=["GET"], strict_slashes=False)  # TODO TODO TODO needs to properly return 429s
 def get_job_stats():
     job_stats = get_dao(current_app).get_job_stats()
     # just being lazy; will need a real transform method if we change the internal class:

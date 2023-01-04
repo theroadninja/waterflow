@@ -375,6 +375,8 @@ class DagDao:
                     fetch_task.job_id, now_s, now_s, int(JobExecutionState.DAG_FETCH), fetch_task.worker, work_queue)
                     cursor.execute(sql, params=params)
 
+                # TODO - do another update to `processed` in jobs table so we know we sucessfully inserted into job_executions
+
                 conn.commit()
 
                 return jobs

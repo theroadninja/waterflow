@@ -11,7 +11,7 @@ if __name__ == "__main__":
 
 
     #thread_count = 1024  # lots of conn pool issues at 20
-    thread_count = 1024
+    thread_count = 512
 
 
 
