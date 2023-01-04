@@ -8,7 +8,13 @@ if __name__ == "__main__":
     logger.info("Starting Worker")
 
     url_base = "http://127.0.0.1:80"
-    thread_count = 512  # lots of conn pool issues at 20
+
+
+    #thread_count = 1024  # lots of conn pool issues at 20
+    thread_count = 1024
+
+
+
     work_queue = 0
     worker = RestWorker(logger, url_base, thread_count, work_queue)
 

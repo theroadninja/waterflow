@@ -111,7 +111,12 @@ def set_dag_for_job(work_queue, job_id):
 @app.route("/api/complete_task/<string:job_id>/<string:task_id>", methods=["POST"])
 def complete_task(job_id, task_id):
     # NOTE:  this is also for "force-complete"
-    service_methods.complete_task(get_dao(current_app), job_id, task_id)
-    return "{}"
+    try:
+        service_methods.complete_task(get_dao(current_app), job_id, task_id)
+        return "{}"
+    except mysql.connector.errors.PoolError as ex:
+        logger = logging.getLogger("server")
+        logger.exception(str(ex))
+        return Response(str(ex), status=429, mimetype="application/text")
 
 

@@ -48,73 +48,128 @@ class StopSignal:  # TOOD trap sigint
         self.stop_requested = False
 
 
+def exp_backoff(failed_attempts, fixed_interval, exp_interval, max_wait, jitter):
+    """
+    The minimum, or starting interval is (fixed_interval + exp_interval^1)
+    """
+    # return random.uniform(5,6)  # TODO remove
+
+
+    if failed_attempts < 1:
+        raise ValueError()
+    if exp_interval <= 0:
+        raise ValueError()
+    return min(max_wait, fixed_interval + exp_interval ** failed_attempts) + random.uniform(0, jitter)
+
+
 
 
 class WaterflowRestClient:
-    def __init__(self, url_base):
+    def __init__(self, url_base, thread_index):
         self.url_base = url_base
+        self.thread_index = thread_index  # for logging
 
-
-    def get_work(self, work_queue, full_worker_name, retries=100):
-        for _ in range(retries):
+    def make_http_call(self, http_fn):
+        logger = logging.getLogger("worker")
+        max_attempts = 100
+        attempt_count = 0
+        while attempt_count < max_attempts:  # TODO different rules for 429s
             try:
-                resp = requests.get(f"{self.url_base}/api/get_work/{work_queue}/{full_worker_name}")
+                attempt_count += 1
+                resp = http_fn()
                 resp.raise_for_status()
                 return resp
             except requests.exceptions.HTTPError as ex:
                 if ex.response.status_code == 429:
-                    time.sleep(random.uniform(2, 4))
-                else:
-                    raise ex
 
-        raise Exception("max retries exceeded")
+                    wait_sec = exp_backoff(attempt_count, fixed_interval=3, exp_interval=2, max_wait=60, jitter=1.5)
+                    logger.info(f"thr={self.thread_index} Got 429, waiting {wait_sec} sec and retrying")  # TODO log lines should include the thread!  and API name
+                    time.sleep(wait_sec)
 
-
-    def complete_task(self, job_id, task_id, retries=60):  # TODO reduce retries?
-        # TODO add retries
-        for _ in range(retries):
-            try:
-                resp = requests.post(f"{self.url_base}/api/complete_task/{job_id}/{task_id}")
-                resp.raise_for_status()
-                return
-            except requests.exceptions.HTTPError as ex:
-                if ex.response.status_code == 429:
-                    time.sleep(random.uniform(5, 6))
-                else:
-                    time.sleep(random.uniform(5, 6))  # TODO better behavior
-        raise Exception("max retries exceeded")
-
-    def set_dag(self, work_queue, job_id, dag, retries=16):  # TODO lower retries again?  and measure max needed
-        logger = logging.getLogger("worker")
-
-        # TODO implement retries
-        #print(dag.to_json())
-        for _ in range(retries):
-            try:
-                resp = requests.post(f"{self.url_base}/api/set_dag/{work_queue}/{job_id}", json=dag.to_json())
-                resp.raise_for_status()
-                return
-            except requests.exceptions.HTTPError as ex:
-                if ex.response.status_code == 429:
-                    logger.info("Got 429 error, backing off and retrying")  # TODO log lines should include the thread!
-                    time.sleep(random.uniform(5,6))  # TODO better backoff
                 elif ex.response.status_code in range(500, 600):
                     with error_500_lock:
                         Error500Counter.count += 1
 
                     logger.info("Got 500 error, retrying")  # TODO log lines should include the thread!
-                    time.sleep(random.uniform(5,6))  # TODO better backoff
-                    pass  # retry
+                    time.sleep(random.uniform(5,6))  # TODO better backoff?
                 else:
                     raise ex
+
         raise Exception("max retries exceeded")
+
+
+
+    def get_work(self, work_queue, full_worker_name, retries=100):
+        return self.make_http_call(
+            lambda: requests.get(f"{self.url_base}/api/get_work/{work_queue}/{full_worker_name}"))
+        # for _ in range(retries):
+        #     try:
+        #         return self.make_http_call(lambda: requests.get(f"{self.url_base}/api/get_work/{work_queue}/{full_worker_name}"))
+        #         #resp = requests.get(f"{self.url_base}/api/get_work/{work_queue}/{full_worker_name}")
+        #         #resp.raise_for_status()
+        #         #return resp
+        #     except requests.exceptions.HTTPError as ex:
+        #         if ex.response.status_code == 429:
+        #             time.sleep(random.uniform(2, 4))
+        #         else:
+        #             raise ex
+
+        #raise Exception("max retries exceeded")
+
+
+    def complete_task(self, job_id, task_id, retries=60):  # TODO reduce retries?
+
+        return self.make_http_call(
+            lambda: requests.post(f"{self.url_base}/api/complete_task/{job_id}/{task_id}")
+        )
+        # # TODO add retries
+        # for _ in range(retries):
+        #     try:
+        #         resp = requests.post(f"{self.url_base}/api/complete_task/{job_id}/{task_id}")
+        #         resp.raise_for_status()
+        #         return
+        #     except requests.exceptions.HTTPError as ex:
+        #         if ex.response.status_code == 429:
+        #             time.sleep(random.uniform(5, 6))
+        #         else:
+        #             time.sleep(random.uniform(5, 6))  # TODO better behavior
+        # raise Exception("max retries exceeded")
+
+    def set_dag(self, work_queue, job_id, dag, retries=32):  # TODO lower retries again?  and measure max needed
+        logger = logging.getLogger("worker")
+
+        return self.make_http_call(
+            lambda: requests.post(f"{self.url_base}/api/set_dag/{work_queue}/{job_id}", json=dag.to_json())
+        )
+
+        # # TODO implement retries
+        # #print(dag.to_json())
+        # for _ in range(retries):
+        #     try:
+        #         resp = requests.post(f"{self.url_base}/api/set_dag/{work_queue}/{job_id}", json=dag.to_json())
+        #         resp.raise_for_status()
+        #         return
+        #     except requests.exceptions.HTTPError as ex:
+        #         if ex.response.status_code == 429:
+        #             logger.info("Got 429 error, backing off and retrying")  # TODO log lines should include the thread!
+        #             time.sleep(random.uniform(5,6))  # TODO better backoff
+        #         elif ex.response.status_code in range(500, 600):
+        #             with error_500_lock:
+        #                 Error500Counter.count += 1
+        #
+        #             logger.info("Got 500 error, retrying")  # TODO log lines should include the thread!
+        #             time.sleep(random.uniform(5,6))  # TODO better backoff
+        #             pass  # retry
+        #         else:
+        #             raise ex
+        # raise Exception("max retries exceeded")
 
 
 
 
 def main_loop(stop_signal: StopSignal, thread_index: int, config: WorkerConfig):
 
-    client = WaterflowRestClient(config.url_base)
+    client = WaterflowRestClient(config.url_base, thread_index)
 
     # startup jitter
     if config.startup_jitter:  # TODO disable and check execution for correctlness  (this is a perf op)
@@ -140,7 +195,7 @@ def main_loop(stop_signal: StopSignal, thread_index: int, config: WorkerConfig):
 
             if work_item.fetch_task:
                 job_id = work_item.fetch_task.job_id
-                logger.debug(f"thread={thread_index} got a dag fetch task for job {job_id}")
+                logger.info(f"thread={thread_index} got a dag fetch task for job {job_id}")
 
                 with set_lock:
                     if job_id in job_id_cache:
@@ -163,10 +218,10 @@ def main_loop(stop_signal: StopSignal, thread_index: int, config: WorkerConfig):
             elif work_item.run_task:
                 job_id = work_item.run_task.job_id
                 task_id = work_item.run_task.task_id
-                logger.debug(f"thread={thread_index} got task {task_id}")
+                logger.info(f"thread={thread_index} got task {task_id}")
 
                 # TODO bring back up to 10
-                time.sleep(6)  # simulate running the task
+                time.sleep(10)  # simulate running the task
 
                 logger.debug("task {work_item.run_task.task_id} complete")
 

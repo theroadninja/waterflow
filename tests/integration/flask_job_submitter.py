@@ -4,8 +4,7 @@ Submits a bunch of jobs for execution to a flask interface for Waterflow.
 import json
 import requests
 
-from waterflow import to_base64_str
-
+from waterflow import to_base64_str, StopWatch
 
 
 def submit_job(url_base, work_queue, job_input):
@@ -27,6 +26,11 @@ def submit_job(url_base, work_queue, job_input):
 
 if __name__ == "__main__":
     url_base = "http://127.0.0.1:80"  # warning:  "localhost" can cause a use perf hit due to IPV6
-    for i in range(8000):
+    stw = StopWatch()
+
+    # JOB_COUNT = 14000
+    JOB_COUNT = 1000
+
+    for i in range(JOB_COUNT):
         submit_job(url_base, 0, str(i))
-    pass
+    print(f"{JOB_COUNT} jobs added in {stw}")
