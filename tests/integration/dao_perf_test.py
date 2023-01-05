@@ -1,17 +1,12 @@
 """
 Performance test against the dao alone.
 """
-import time
-
 import waterflow
 from waterflow import to_base64_str, StopWatch
 import waterflow.dao
 from waterflow.dao_models import PendingJob
 from waterflow.task import Task, TaskState
 from waterflow.job import Dag
-
-
-
 
 
 def make_test_dag10():
@@ -82,8 +77,6 @@ def fetch_tasks_1by1(dao, n, worker="w"):
             return tasks
 
 
-
-
 def single_threaded_test(conn_pool, job_count, task_batch_size=1000):
     dao = waterflow.dao.DagDao(conn_pool, "waterflow")
     stw_total = StopWatch()
@@ -107,7 +100,6 @@ def single_threaded_test(conn_pool, job_count, task_batch_size=1000):
 
     print(f"{len(fetch_dag_tasks)} dag-fetch tasks pulled in {stw2}")
 
-
     stw3 = StopWatch()
     for fetch_task in fetch_dag_tasks:
         fetch_task.job_id
@@ -116,14 +108,12 @@ def single_threaded_test(conn_pool, job_count, task_batch_size=1000):
 
     print(f"{len(fetch_dag_tasks)} dags set in {stw3}")
 
-
     # WORKERS = [f"w{i}" for i in range(task_batch_size)]
     stw_all_tasks = StopWatch()
     task_count = 0
     while True:
         stw_batch = StopWatch()
         # fetching all at once:
-        # tasks = dao.get_and_start_tasks(WORKERS)
         tasks = fetch_tasks_1by1(dao, task_batch_size)
         task_count += len(tasks)
         if not tasks:
@@ -146,7 +136,6 @@ def single_threaded_test(conn_pool, job_count, task_batch_size=1000):
 
     print(f"{task_count} tasks run in {stw_all_tasks}")
     print(f"TEST COMPLETE: total time elapsed: {stw_total}")
-    # TODO verify all tasks and jobs show as completed in the DB
 
 
 if __name__ == "__main__":
@@ -163,6 +152,5 @@ if __name__ == "__main__":
     single_threaded_test(conn_pool, 200)  # 10K takes 22 sec, 100K takes 338 sec
 
     # 1,000:    116 sec
-
     # 20000 tasks run in 298.28511142730713 seconds
     # TEST COMPLETE: total time elapsed: 332.72497367858887 seconds

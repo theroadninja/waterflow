@@ -1,18 +1,14 @@
 -- CREATE SCHEMA `waterflow` DEFAULT CHARACTER SET utf8 ;
 
--- select UTC_TIMESTAMP()
--- insert into jobs (job_id, job_input) VALUES ("abc123", NULL);
-
-
 CREATE TABLE IF NOT EXISTS jobs (
-    job_id VARCHAR(32) NOT NULL,   -- uuid without dashes
+    job_id VARCHAR(32) NOT NULL,   -- 32 because uuid without dashes
     PRIMARY KEY (job_id),
     job_name VARCHAR(64),
     created_utc DATETIME NOT NULL,
     job_input BLOB,   -- 16 MB
     job_input_v TINYINT UNSIGNED, -- version of serialization used for job_input BLOB
     service_pointer VARCHAR(128),  -- any UTF8 string (json or base64)
-    work_queue TINYINT UNSIGNED DEFAULT 0,  -- TODO remove default value
+    work_queue TINYINT UNSIGNED DEFAULT 0,
     dag BLOB,
     dag_v TINYINT UNSIGNED,
     processing TINYINT DEFAULT 0,
@@ -21,18 +17,15 @@ CREATE TABLE IF NOT EXISTS jobs (
     INDEX (created_utc)
 );
 
-
--- TODO:  small int for dag BLOB version
 CREATE TABLE IF NOT EXISTS job_executions (
     job_id VARCHAR(32),
     created_utc DATETIME NOT NULL,
     updated_utc DATETIME NOT NULL,
     state TINYINT UNSIGNED,   -- 0 to 255
-    worker VARCHAR(255),  -- TODO reference to some worker table???
-    -- TODO last update utc and created utc
+    worker VARCHAR(255),
     dag BLOB, -- TODO get rid of this
     dag_v TINYINT UNSIGNED,  -- TODO get rid of this
-    work_queue TINYINT UNSIGNED DEFAULT 0,  -- TODO remove default value
+    work_queue TINYINT UNSIGNED DEFAULT 0,
     FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
     INDEX (work_queue)
 );
@@ -40,7 +33,6 @@ CREATE TABLE IF NOT EXISTS job_executions (
 CREATE TABLE IF NOT EXISTS job_tags (
     job_id VARCHAR(32),
     tag VARCHAR(255),
-
     FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
     INDEX (tag)
 );
@@ -55,7 +47,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     task_input BLOB,
     task_input_v TINYINT UNSIGNED,
     service_pointer VARCHAR(128),  -- any UTF8 string (json or base64)
-    work_queue TINYINT UNSIGNED DEFAULT 0,  -- tasks inherit the work queue of their job.  TODO remove default value
+    work_queue TINYINT UNSIGNED DEFAULT 0,  -- tasks inherit the work queue of their job.
 
     PRIMARY KEY (task_id),
     CONSTRAINT uc_id UNIQUE (job_id, task_id),

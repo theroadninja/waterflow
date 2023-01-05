@@ -102,7 +102,7 @@ def set_dag_for_job(work_queue, job_id):
     try:
         service_methods.set_dag_for_job_REST(get_dao(current_app), job_id, dag, work_queue)
         logger.info("returned from set_dag_for_job_REST()")
-        return "{}"  # need to return someting?
+        return "{}"
     except mysql.connector.errors.PoolError as ex:
         logger.exception(str(ex))
         return Response(str(ex), status=429, mimetype="application/text")

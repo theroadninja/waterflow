@@ -3,7 +3,6 @@ import requests
 
 from waterflow import to_base64_str
 
-
 WORK_QUEUE = 0
 
 
@@ -20,6 +19,7 @@ def test_submit_job(url_base):
 
     resp = requests.post(f"{url_base}/api/submit_job/{WORK_QUEUE}", json=request)
     print(resp.content)
+
 
 def test_run_job(url_base):
     job_name = "job0"
@@ -43,19 +43,17 @@ def test_run_job(url_base):
     # "/api/get_work/<int:work_queue>/<string:worker>"
     print(resp.content)
 
-    # TODO do I need to manually check HTTP codes?
-
     # finish fetching the dag
+    # TODO
 
 def test_get_stats(url_base):
     resp = requests.get(f"{url_base}/ui/stats/jobs")
     print(resp)
 
 
-
 if __name__ == "__main__":
     URL_BASE = "http://localhost:80"
 
-    #test_submit_job(URL_BASE)
-    #test_run_job(URL_BASE)
+    test_submit_job(URL_BASE)
+    test_run_job(URL_BASE)
     test_get_stats(URL_BASE)

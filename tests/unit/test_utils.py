@@ -8,14 +8,10 @@ from waterflow.dao import DagDao
 MYPATH = os.path.dirname(os.path.abspath(inspect.stack()[0][1]))
 
 def get_conn_pool():
-    # TODO switch to test database!
-
-    UNIT_TEST_DATABASE = "waterflow_unit_tests"  # TODO
-
-    FILENAME = os.path.abspath("../local/mysqlconfig.json")
+    FILENAME = os.path.abspath("../local/unit_test_config.json")
     print(os.path.abspath(FILENAME))
     if not os.path.isfile(FILENAME):
-        raise Exception(f"Can't fine {FILENAME}")
+        raise Exception(f"Can't find {FILENAME}")
 
     return waterflow.get_connection_pool_from_file(FILENAME, "unit_test_pool")
 

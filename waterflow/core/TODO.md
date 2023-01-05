@@ -1,1 +1,1 @@
-TODO:  add dao_models, dao, etc, to this "core" package.
+TODO:  move dao_models, dao, etc, to this "core" package.
