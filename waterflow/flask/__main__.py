@@ -5,6 +5,7 @@ from waterflow.flask.flask_service import app, before_first_request
 if __name__ == "__main__":
     import inspect
     import os
+
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger("server")
     logger.info("Starting Flask Waterflow Server")

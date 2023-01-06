@@ -7,12 +7,18 @@ import json
 import logging
 from waterflow import get_connection_pool_from_file, service_methods
 from waterflow.dao import DagDao
-from .flask_adapter import read_pending_job, work_item_to_response, read_dag_from_request
+from .flask_adapter import (
+    read_pending_job,
+    work_item_to_response,
+    read_dag_from_request,
+)
 import mysql
 from flask_cors import CORS, cross_origin
 
 app = Flask("Waterflow Flask")
-CORS(app)  # <- stupid bs to fix chrome error:  "No 'Access-Control-Allow-Origin' header is present on the requested resource."
+CORS(
+    app
+)  # <- stupid bs to fix chrome error:  "No 'Access-Control-Allow-Origin' header is present on the requested resource."
 
 
 def before_first_request(app, mysql_config_file, pool_name, dbname, pool_size=32):
@@ -60,7 +66,9 @@ def something():
     return "Waterflow Flask Server"
 
 
-@app.route("/ui/stats/jobs", methods=["GET"], strict_slashes=False)  # TODO TODO TODO needs to properly return 429s
+@app.route(
+    "/ui/stats/jobs", methods=["GET"], strict_slashes=False
+)  # TODO TODO TODO needs to properly return 429s
 @cross_origin()
 def get_job_stats():
     logger = logging.getLogger("server")
@@ -68,6 +76,7 @@ def get_job_stats():
     job_stats = get_dao(current_app).get_job_stats()
     # just being lazy; will need a real transform method if we change the internal class:
     return json.dumps(dataclasses.asdict(job_stats))
+
 
 @app.route("/ui/stats/tasks", methods=["GET"], strict_slashes=False)
 @cross_origin()
@@ -77,7 +86,9 @@ def get_task_stats():
     return json.dumps(dataclasses.asdict(task_stats))
 
 
-@app.route("/api/submit_job/<int:work_queue>", methods=["POST"])  # TODO /api/ to distinguish from /ui/ methods
+@app.route(
+    "/api/submit_job/<int:work_queue>", methods=["POST"]
+)  # TODO /api/ to distinguish from /ui/ methods
 def submit_job(work_queue):
     """
     Returns an empty work item if there is no work.
@@ -92,7 +103,9 @@ def get_work_item(work_queue, worker):
     logger = logging.getLogger("server")
     logger.info("received get_work call")
     try:
-        work_item = service_methods.get_work_item(get_dao(current_app), work_queue, worker)
+        work_item = service_methods.get_work_item(
+            get_dao(current_app), work_queue, worker
+        )
         return json.dumps(work_item_to_response(work_item))
     except mysql.connector.errors.PoolError as ex:
         logger.exception(str(ex))
@@ -100,14 +113,18 @@ def get_work_item(work_queue, worker):
 
 
 # NOTE:  a 400 error could be caused by invalid json
-@app.route("/api/set_dag/<int:work_queue>/<string:job_id>", methods=["POST"])  # TODO need to decide soon if work queues are ints or strings on the API
+@app.route(
+    "/api/set_dag/<int:work_queue>/<string:job_id>", methods=["POST"]
+)  # TODO need to decide soon if work queues are ints or strings on the API
 def set_dag_for_job(work_queue, job_id):
     logger = logging.getLogger("server")
     logger.info(f"received set_dag request for {job_id}")
     dag = read_dag_from_request(request.get_json())
     logger.info("make it past get_json()")
     try:
-        service_methods.set_dag_for_job_REST(get_dao(current_app), job_id, dag, work_queue)
+        service_methods.set_dag_for_job_REST(
+            get_dao(current_app), job_id, dag, work_queue
+        )
         logger.info("returned from set_dag_for_job_REST()")
         return "{}"
     except mysql.connector.errors.PoolError as ex:
@@ -125,5 +142,3 @@ def complete_task(job_id, task_id):
         logger = logging.getLogger("server")
         logger.exception(str(ex))
         return Response(str(ex), status=429, mimetype="application/text")
-
-

@@ -19,10 +19,12 @@ from typing import List, Dict, Optional
 #     SUCCEEDED = 2
 #     FAILED = 3
 
+
 class TaskState(IntEnum):
     """
     New global state meant to replace TaskEligibilityState and TaskExecState
     """
+
     BLOCKED = 0
     PENDING = 1
     PAUSED = 2
@@ -37,10 +39,8 @@ class TaskState(IntEnum):
 
 
 from waterflow import dao_models
+
 Task = dao_models.Task  # TODO finish moving to dao_models.py
-
-
-
 
 
 @dataclass
@@ -52,7 +52,9 @@ class TaskView1:  # TODO not sure what the final form will be
     updated_utc: datetime.datetime
 
 
-def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename to check_valid and throw exceptions instead
+def is_valid(
+    tasks: List[Task], adj_list: Dict[str, List[str]]
+):  # TODO rename to check_valid and throw exceptions instead
     """
     :return True if the given graph is valid
     """
@@ -61,7 +63,6 @@ def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename 
     # TODO enforce a limit of 1024-4096 total tasks, to avoid the need for paging.
     # TODO also enforce a limit of task input size, and consider changing from BLOB to TEXT
     # TODO also enforce a limit of job input size, and consider changing from BLOB to TEXT
-
 
     # TODO what about dags with only one tasks, or multiple unconnected tasks????
 
@@ -83,8 +84,6 @@ def is_valid(tasks: List[Task], adj_list: Dict[str, List[str]]):  # TODO rename 
     unknown_ids = task_ids_in_adj - task_ids
     if unknown_ids:
         raise ValueError(f"adj list contains unknown ids: {unknown_ids}")
-
-
 
     # TODO detect cycles and other invalid situations!
 

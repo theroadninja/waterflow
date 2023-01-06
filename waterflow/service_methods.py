@@ -15,23 +15,31 @@ from waterflow.job import JobView1
 ## Inspection Methods
 ##
 
+
 def get_job_count_summary():
     pass  # TODO
 
+
 # TODO rename to get_job_info()
-def get_job_details(dao: DagDao, job_id: str) -> JobView1:  # TODO move JobView1 to dao_models.JobView
+def get_job_details(
+    dao: DagDao, job_id: str
+) -> JobView1:  # TODO move JobView1 to dao_models.JobView
     """
     Returns everything about a job, except for its tasks.
     """
     return dao.get_job_info(job_id)
 
-def get_job_tasks(dao: DagDao, job_id: str):  # TODO maybe its just a flag to also receive tasks?
-    pass # TODO dao.get_tasks_by_job()
+
+def get_job_tasks(
+    dao: DagDao, job_id: str
+):  # TODO maybe its just a flag to also receive tasks?
+    pass  # TODO dao.get_tasks_by_job()
 
 
 ##
 ## Execution Methods
 ##
+
 
 def submit_job(dao: DagDao, job: PendingJob, now_utc=None) -> str:
     """
@@ -104,7 +112,6 @@ def set_dag_for_job(dao: DagDao, job_id: str, dag: Dag, work_queue: str, now_utc
     # TODO set a limit of 1024-4096 tasks per job
 
 
-
 def _rest_task_to_internal_task(rest_task: RestTask, task_id: str):
     return Task(
         task_id=task_id,
@@ -114,30 +121,37 @@ def _rest_task_to_internal_task(rest_task: RestTask, task_id: str):
         service_pointer=rest_task.service_pointer,
     )
 
+
 def _transform_adj_list(adj_list_by_index, id_map):
     """
     The request identifies tasks by "index" -- an integer that has no meaning outside the scope of the request.  This
     function translate the adjacency list expressed using indexes to one using the newly-assigned string task ids.
     """
-    id_map = {int(k): v for k,v in id_map.items()}
+    id_map = {int(k): v for k, v in id_map.items()}
 
     return {
-        id_map[int(task_index)]:  [id_map[int(i)] for i in neighboors]
+        id_map[int(task_index)]: [id_map[int(i)] for i in neighboors]
         for task_index, neighboors in adj_list_by_index.items()
     }
 
 
-def set_dag_for_job_REST(dao: DagDao, job_id: str, dag: RestDag, work_queue: str, now_utc=None):
+def set_dag_for_job_REST(
+    dao: DagDao, job_id: str, dag: RestDag, work_queue: str, now_utc=None
+):
     now_utc = now_utc or datetime.datetime.utcnow()
 
     id_map = {}
     internal_tasks = []
-    for task_index,  in dag.tasks:
+    for (task_index,) in dag.tasks:
         task_id = make_id()
         id_map[task_index] = task_id
-        internal_tasks.append(_rest_task_to_internal_task(dag.tasks[task_index], task_id))
+        internal_tasks.append(
+            _rest_task_to_internal_task(dag.tasks[task_index], task_id)
+        )
 
-    adj_list = _transform_adj_list(dag.adj_list, id_map)  # TODO why were ints transformed into strings?
+    adj_list = _transform_adj_list(
+        dag.adj_list, id_map
+    )  # TODO why were ints transformed into strings?
     internal_dag = Dag(
         raw_dag64=None,  # TODO
         raw_dagv=0,  # TODO
@@ -154,22 +168,25 @@ def complete_task(dao: DagDao, job_id, task_id):
     dao.update_task_deps(job_id)
     dao.update_job_state(job_id)
 
+
 ## ######## BELOW THIS LINE NOT NEEDED FOR NEXT PERF TEST ########
+
 
 def fail_job():
     pass  # TODO
 
+
 def cancel_task():
     pass  # TODO
+
 
 def fail_task():
     pass  # TODO
 
+
 def retry_task():
     pass  # TODO
 
+
 def keep_task_alive():
     pass  # TODO
-
-
-

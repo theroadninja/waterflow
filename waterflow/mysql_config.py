@@ -9,7 +9,7 @@ class MysqlConfig:
     password: str
     hostname: str
     dbname: str
-    port: int   # TODO not implemented yet
+    port: int  # TODO not implemented yet
 
     @staticmethod
     def from_file(filename):

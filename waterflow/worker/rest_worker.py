@@ -16,6 +16,7 @@ def fetch_dag(fetch_task):
     time.sleep(5)
     logger.info("done fetching dag()")
 
+
 def run_task(task):
     logger = logging.getLogger("worker")
     logger.info("Starting Worker")
@@ -57,7 +58,10 @@ def exp_backoff(failed_attempts, fixed_interval, exp_interval, max_wait, jitter)
         raise ValueError()
     if exp_interval <= 0:
         raise ValueError()
-    return min(max_wait, fixed_interval + exp_interval ** failed_attempts) + random.uniform(0, jitter)
+    return min(
+        max_wait, fixed_interval + exp_interval**failed_attempts
+    ) + random.uniform(0, jitter)
+
 
 class WaterflowRestClient:
     def __init__(self, url_base, thread_index):
@@ -77,16 +81,26 @@ class WaterflowRestClient:
             except requests.exceptions.HTTPError as ex:
                 if ex.response.status_code == 429:
 
-                    wait_sec = exp_backoff(attempt_count, fixed_interval=3, exp_interval=2, max_wait=60, jitter=1.5)
-                    logger.info(f"thr={self.thread_index} Got 429, waiting {wait_sec} sec and retrying")  # TODO log lines should include the thread!  and API name
+                    wait_sec = exp_backoff(
+                        attempt_count,
+                        fixed_interval=3,
+                        exp_interval=2,
+                        max_wait=60,
+                        jitter=1.5,
+                    )
+                    logger.info(
+                        f"thr={self.thread_index} Got 429, waiting {wait_sec} sec and retrying"
+                    )  # TODO log lines should include the thread!  and API name
                     time.sleep(wait_sec)
 
                 elif ex.response.status_code in range(500, 600):
                     with error_500_lock:
                         Error500Counter.count += 1
 
-                    logger.info("Got 500 error, retrying")  # TODO log lines should include the thread!
-                    time.sleep(random.uniform(5,6))  # TODO better backoff?
+                    logger.info(
+                        "Got 500 error, retrying"
+                    )  # TODO log lines should include the thread!
+                    time.sleep(random.uniform(5, 6))  # TODO better backoff?
                 else:
                     raise ex
 
@@ -94,17 +108,26 @@ class WaterflowRestClient:
 
     def get_work(self, work_queue, full_worker_name, retries=100):
         return self.make_http_call(
-            lambda: requests.get(f"{self.url_base}/api/get_work/{work_queue}/{full_worker_name}"))
+            lambda: requests.get(
+                f"{self.url_base}/api/get_work/{work_queue}/{full_worker_name}"
+            )
+        )
 
     def complete_task(self, job_id, task_id, retries=60):  # TODO reduce retries?
         return self.make_http_call(
-            lambda: requests.post(f"{self.url_base}/api/complete_task/{job_id}/{task_id}")
+            lambda: requests.post(
+                f"{self.url_base}/api/complete_task/{job_id}/{task_id}"
+            )
         )
 
-    def set_dag(self, work_queue, job_id, dag, retries=32):  # TODO lower retries again?  and measure max needed
+    def set_dag(
+        self, work_queue, job_id, dag, retries=32
+    ):  # TODO lower retries again?  and measure max needed
         logger = logging.getLogger("worker")
         return self.make_http_call(
-            lambda: requests.post(f"{self.url_base}/api/set_dag/{work_queue}/{job_id}", json=dag.to_json())
+            lambda: requests.post(
+                f"{self.url_base}/api/set_dag/{work_queue}/{job_id}", json=dag.to_json()
+            )
         )
 
 
@@ -118,7 +141,9 @@ def main_loop(stop_signal: StopSignal, thread_index: int, config: WorkerConfig):
 
     logger = logging.getLogger("worker")
     logger.info(f"Starting Thread {thread_index} -- " + str(threading.get_ident()))
-    full_worker_name = f"{config.worker_name}_{thread_index}_" + str(threading.get_ident())
+    full_worker_name = f"{config.worker_name}_{thread_index}_" + str(
+        threading.get_ident()
+    )
     while not stop_signal.stop_requested:
         try:
             # look for work
@@ -131,7 +156,9 @@ def main_loop(stop_signal: StopSignal, thread_index: int, config: WorkerConfig):
 
             if work_item.fetch_task:
                 job_id = work_item.fetch_task.job_id
-                logger.info(f"thread={thread_index} got a dag fetch task for job {job_id}")
+                logger.info(
+                    f"thread={thread_index} got a dag fetch task for job {job_id}"
+                )
 
                 with set_lock:
                     if job_id in job_id_cache:
@@ -170,8 +197,8 @@ def main_loop(stop_signal: StopSignal, thread_index: int, config: WorkerConfig):
             # TODO only sleep on 429s
             time.sleep(random.uniform(1, 3))
 
-class RestWorker:
 
+class RestWorker:
     def __init__(self, logger, url_base, thread_count, work_queue):
         self.logger = logger
         self.url_base = url_base

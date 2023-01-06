@@ -20,13 +20,15 @@ def read_pending_job(work_queue, request_json: Dict):
         job_name=request_json["job_name"],
         job_input64=request_json["job_input64"],
         job_input64_v=request_json.get("job_input64_v"),
-        service_pointer=request_json["service_pointer"],  # TODO maybe this should be separate fields?
+        service_pointer=request_json[
+            "service_pointer"
+        ],  # TODO maybe this should be separate fields?
         tags=request_json.get("tags"),
         work_queue=work_queue,
     )
 
-def work_item_to_response(work_item: WorkItem) -> Dict:
 
+def work_item_to_response(work_item: WorkItem) -> Dict:
     def fetch_task_to_dict(fetch_task: FetchDagTask):
         if fetch_task is None:
             return None
@@ -53,10 +55,10 @@ def work_item_to_response(work_item: WorkItem) -> Dict:
 
     return {
         "fetch_dag": fetch_task_to_dict(work_item.dag_fetch),
-        "run_task": run_task_to_dict(work_item.run_task)
+        "run_task": run_task_to_dict(work_item.run_task),
     }
+
 
 def read_dag_from_request(request_json: Dict):
 
     return Dag.from_json_dict(json.loads(request_json))
-
