@@ -1,4 +1,5 @@
 flask
+flask-cors
 mysql-connector-python==8.0.31
 pytz
 requests

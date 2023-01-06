@@ -9,8 +9,10 @@ from waterflow import get_connection_pool_from_file, service_methods
 from waterflow.dao import DagDao
 from .flask_adapter import read_pending_job, work_item_to_response, read_dag_from_request
 import mysql
+from flask_cors import CORS, cross_origin
 
 app = Flask("Waterflow Flask")
+CORS(app)  # <- stupid bs to fix chrome error:  "No 'Access-Control-Allow-Origin' header is present on the requested resource."
 
 
 def before_first_request(app, mysql_config_file, pool_name, dbname, pool_size=32):
@@ -53,17 +55,22 @@ def get_dao(app):
 
 
 @app.route("/")
+@cross_origin()
 def something():
     return "Waterflow Flask Server"
 
 
 @app.route("/ui/stats/jobs", methods=["GET"], strict_slashes=False)  # TODO TODO TODO needs to properly return 429s
+@cross_origin()
 def get_job_stats():
+    logger = logging.getLogger("server")
+    logger.info(f"received get_job_stats request")
     job_stats = get_dao(current_app).get_job_stats()
     # just being lazy; will need a real transform method if we change the internal class:
     return json.dumps(dataclasses.asdict(job_stats))
 
 @app.route("/ui/stats/tasks", methods=["GET"], strict_slashes=False)
+@cross_origin()
 def get_task_stats():
     task_stats = get_dao(current_app).get_task_stats()
     # just being lazy; will need a real transform method if we change the internal class:

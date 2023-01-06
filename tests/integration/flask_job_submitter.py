@@ -29,7 +29,7 @@ if __name__ == "__main__":
     stw = StopWatch()
 
     # JOB_COUNT = 14000
-    JOB_COUNT = 14000
+    JOB_COUNT = 512
 
     for i in range(JOB_COUNT):
         submit_job(url_base, 0, str(i))
