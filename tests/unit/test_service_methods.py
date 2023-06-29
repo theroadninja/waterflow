@@ -1,9 +1,10 @@
 import unittest
 
-from waterflow.job import JobExecutionState
-from waterflow import service_methods, to_base64_str, from_base64_str
-from waterflow.dao_models import PendingJob
-from waterflow.dao import DagDao
+from waterflow.core.job_state import JobExecutionState
+from waterflow import to_base64_str, from_base64_str
+from waterflow.server import service_methods
+from waterflow.core.dao_models import PendingJob
+from waterflow.server.dao import DagDao
 from waterflow.mocks.sample_dags import make_single_task_dag, make_linear_test_dag2
 from .test_utils import get_conn_pool, drop_and_recreate_database
 

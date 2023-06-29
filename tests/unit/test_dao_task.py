@@ -2,11 +2,11 @@ import datetime
 import unittest
 
 import waterflow
-from waterflow.dao import DagDao
-from waterflow.dao_models import PendingJob, TaskStats
-from waterflow.task import TaskState
-from waterflow.job import JobExecutionState
-from waterflow.exceptions import InvalidTaskState
+from waterflow.server.dao import DagDao
+from waterflow.core.dao_models import PendingJob, TaskStats
+from waterflow.core.task_state import TaskState
+from waterflow.core.job_state import JobExecutionState
+from waterflow.core.exceptions import InvalidTaskState
 from waterflow.mocks.sample_dags import make_linear_test_dag, make_linear_test_dag2, make_single_task_dag
 from .test_utils import get_conn_pool, path_to_sql, task_view1_list_to_dict, get_task_state
 

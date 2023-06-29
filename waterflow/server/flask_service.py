@@ -1,12 +1,13 @@
 """
-Provides a flask interface for the service.
+Provides a server interface for the service.
 """
 import dataclasses
 from flask import Flask, current_app, request, Response
 import json
 import logging
-from waterflow import get_connection_pool_from_file, service_methods
-from waterflow.dao import DagDao
+from waterflow import get_connection_pool_from_file
+from . import service_methods
+from waterflow.server.dao import DagDao
 from .flask_adapter import (
     read_pending_job,
     work_item_to_response,
@@ -41,7 +42,7 @@ global_db_pool = None  # TODO explicitly test what happend when I attempt to cre
 
 
 def get_connection_pool(app):
-    # cant figure out a better way to do this -- flask.g doesnt work.
+    # cant figure out a better way to do this -- server.g doesnt work.
     global global_db_pool
     if not global_db_pool:
         print("*\n*\n*\nCREATING NEW CONNECTION POOL*\n*\n*\n")
@@ -88,7 +89,7 @@ def get_task_stats():
 
 @app.route(
     "/api/submit_job/<int:work_queue>", methods=["POST"]
-)  # TODO /api/ to distinguish from /ui/ methods
+)
 def submit_job(work_queue):
     """
     Returns an empty work item if there is no work.

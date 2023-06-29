@@ -20,7 +20,7 @@ worker is enough to run tens of thousands of jobs.
 
 The database schema is in [sql/database.sql](sql/database.sql)
 
-The flask server is in the package `waterflow.core` -- see [waterflow/flask/\_\_main\_\_.py](waterflow/flask/__main__.py)
+The flask server is in the package `waterflow.core` -- see [waterflow/flask/\_\_main\_\_.py](waterflow/server/__main__.py)
 
 The worker is in the package `waterflow.worker` -- see [waterflow/worker/\_\_main\_\_.py](waterflow/worker/__main__.py) 
 
@@ -31,6 +31,22 @@ Most of the logic for the database queries and state transitions of jobs and tas
 The UI is in a separate repo.  See https://github.com/kakun45/waterflow_ui
 
 # Setup
+
+Mysql has started shipping with "mysql shell" which is a weird command line program that is different from "mysql".
+You need to manually set it to SQL with `\sql`
+
+Mysql:
+```
+\connect root@localhost
+\sql
+create database waterflow
+create database waterflowunit
+create user 'wateruser'@'localhost' identified by 'XXXXXXXXXXX';
+grant all on waterflow.* to 'wateruser'@'localhost';
+grant all on waterflowunit.* to 'wateruser'@'localhost';
+\disconnect
+\connect wateruser@localhost
+```
 
 The database connection is controlled by a json file in a `local/` folder that is not checked into git.
 
@@ -46,9 +62,18 @@ This is the format:
 
 # Troubleshooting
 
-# Increasing Mysql Max Connections
+## Increasing Mysql Max Connections
 
 ```
 show variables like "max_connections";
 set global max_connections = 1000;
 ```
+
+## Pycharm unit tests not working in Windows
+
+Need to set pytest as the default runner.
+- "ctrl + alt + s" -> Python Integrated Tools > Default test runner
+
+## getpass library does not work in Pycharm
+
+pycharm: run -> edit configurations -> emulate terminal in output console

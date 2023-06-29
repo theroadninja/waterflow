@@ -1,5 +1,9 @@
 import logging
+import inspect
+import json
+import os
 
+from waterflow.core import load_local_config
 from waterflow.worker.rest_worker import RestWorker
 
 if __name__ == "__main__":
@@ -7,10 +11,9 @@ if __name__ == "__main__":
     logger = logging.getLogger("worker")
     logger.info("Starting Worker")
 
-    url_base = "http://127.0.0.1:80"
+    config = load_local_config("worker_config.json")
 
-    thread_count = 512
-    work_queue = 0
-    worker = RestWorker(logger, url_base, thread_count, work_queue)
-
+    # perf tests use thread count of 512
+    thread_count = 32
+    worker = RestWorker(logger, config["server_url_base"], thread_count, config["work_queue"])
     worker.main_loop()

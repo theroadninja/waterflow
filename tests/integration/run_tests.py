@@ -2,19 +2,14 @@
 Integration tests that use a live mysql database
 """
 
-import waterflow
 from waterflow import to_base64_str
-import waterflow.dao
-from waterflow.dao_models import PendingJob
-from waterflow.job import Dag
-from waterflow.task import Task, TaskState
-from waterflow.mysql_config import MysqlConfig
-import uuid
+import waterflow.server.dao
+from waterflow.core.dao_models import PendingJob, Dag, Task
+
 
 if __name__ == "__main__":
-    # note: from getpass import getpass   # pycharm: run -> edit configurations -> emulate terminal in output console
     conn_pool = waterflow.get_connection_pool_from_file("../../local/mysqlconfig.json", "waterflow_dao")
-    dao = waterflow.dao.DagDao(conn_pool, "waterflow")
+    dao = waterflow.server.dao.DagDao(conn_pool, "waterflow")
 
     job_input = waterflow.to_base64_str("abc")
 
@@ -22,7 +17,6 @@ if __name__ == "__main__":
     print(f"added job {job_id}")
 
     dao.get_and_start_jobs(workers=["worker1"])
-
 
     task1 = waterflow.make_id()
     task2 = waterflow.make_id()

@@ -1,24 +1,27 @@
 import datetime
-import pytz
-from typing import List, Dict
+from typing import List
 import uuid
 
-from waterflow.exceptions import (
+import waterflow
+from waterflow.core.exceptions import (
     InvalidJobError,
     InvalidTaskState,
     InvalidJobState,
     NotImplementedYet,
 )
-from waterflow.task import Task, TaskState, TaskView1
-import waterflow.task
-from waterflow.job import JobExecutionState, Dag, JobView1
+from waterflow.core.task_state import TaskState
+from waterflow.core.job_state import JobExecutionState
 from waterflow import check_utc_or_unaware
-from waterflow.dao_models import (
+from waterflow.core.dao_models import (
+    Dag,
+    Task,
+    TaskView1,
     PendingJob,
     FetchDagTask,
     TaskAssignment,
     JobStats,
     TaskStats,
+    JobView1,
 )
 
 WORKER_LENGTH = 255  # must match the varchar length in the db schema
@@ -320,75 +323,75 @@ class DagDao:
                     )
                 return tasks
 
-    # a.k.a. get_work_1()
-    def get_and_start_jobs_OLD(
-        self, workers: List[str], work_queue=0, now_utc=None
-    ) -> List[FetchDagTask]:
-        """
-        Called to get fetch-dag tasks for workers, which starts a job.
-        """
-        if not isinstance(work_queue, int):
-            raise ValueError("work queue must be an int")
-        now_utc = now_utc or datetime.datetime.utcnow()
-        self._check_worker_args(workers)  # TODO unit test this being enforced
-
-        jobs = []
-        with self.conn_pool.get_connection() as conn:
-            with conn.cursor() as cursor:
-
-                # TODO probably need to redesign the tables!
-                # 1. put all the large bytes in the jobs table
-                # 2. insert into job_executions when the job is submitted
-
-                cursor.execute("LOCK TABLES jobs WRITE, job_executions WRITE;")
-                # conn.start_transaction()  # gives a "transaction already in progress" error
-
-                fetch_sql = """
-                SELECT jobs.job_id, TO_BASE64(jobs.job_input), jobs.service_pointer, jobs.work_queue
-                FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
-                WHERE job_executions.job_id is NULL AND jobs.work_queue = %s
-                LIMIT %s
-                """
-                cursor.execute(
-                    fetch_sql,
-                    params=(
-                        work_queue,
-                        len(workers),
-                    ),
-                )
-                rows = cursor.fetchall()
-                for i, row in enumerate(rows):
-                    job_id, job_input64, service_pointer, work_queue = row
-                    jobs.append(
-                        FetchDagTask(
-                            job_id,
-                            job_input64,
-                            service_pointer,
-                            work_queue,
-                            worker=workers[i],
-                        )
-                    )
-
-                sql = """
-                        insert into job_executions (job_id, created_utc, updated_utc, state, worker, dag, work_queue)
-                        values (%s, %s, %s, %s, %s, NULL, %s);
-                        """
-                for fetch_task in jobs:
-                    now_s = now_utc.strftime(DATETIME_COL_FORMAT)
-                    params = (
-                        fetch_task.job_id,
-                        now_s,
-                        now_s,
-                        int(JobExecutionState.DAG_FETCH),
-                        fetch_task.worker,
-                        work_queue,
-                    )
-                    cursor.execute(sql, params=params)
-
-                conn.commit()
-                cursor.execute("UNLOCK TABLES;")
-
-        return jobs
+    # # a.k.a. get_work_1()
+    # def get_and_start_jobs_OLD(
+    #     self, workers: List[str], work_queue=0, now_utc=None
+    # ) -> List[FetchDagTask]:
+    #     """
+    #     Called to get fetch-dag tasks for workers, which starts a job.
+    #     """
+    #     if not isinstance(work_queue, int):
+    #         raise ValueError("work queue must be an int")
+    #     now_utc = now_utc or datetime.datetime.utcnow()
+    #     self._check_worker_args(workers)  # TODO unit test this being enforced
+    #
+    #     jobs = []
+    #     with self.conn_pool.get_connection() as conn:
+    #         with conn.cursor() as cursor:
+    #
+    #             # TODO probably need to redesign the tables!
+    #             # 1. put all the large bytes in the jobs table
+    #             # 2. insert into job_executions when the job is submitted
+    #
+    #             cursor.execute("LOCK TABLES jobs WRITE, job_executions WRITE;")
+    #             # conn.start_transaction()  # gives a "transaction already in progress" error
+    #
+    #             fetch_sql = """
+    #             SELECT jobs.job_id, TO_BASE64(jobs.job_input), jobs.service_pointer, jobs.work_queue
+    #             FROM jobs LEFT JOIN job_executions on jobs.job_id = job_executions.job_id
+    #             WHERE job_executions.job_id is NULL AND jobs.work_queue = %s
+    #             LIMIT %s
+    #             """
+    #             cursor.execute(
+    #                 fetch_sql,
+    #                 params=(
+    #                     work_queue,
+    #                     len(workers),
+    #                 ),
+    #             )
+    #             rows = cursor.fetchall()
+    #             for i, row in enumerate(rows):
+    #                 job_id, job_input64, service_pointer, work_queue = row
+    #                 jobs.append(
+    #                     FetchDagTask(
+    #                         job_id,
+    #                         job_input64,
+    #                         service_pointer,
+    #                         work_queue,
+    #                         worker=workers[i],
+    #                     )
+    #                 )
+    #
+    #             sql = """
+    #                     insert into job_executions (job_id, created_utc, updated_utc, state, worker, dag, work_queue)
+    #                     values (%s, %s, %s, %s, %s, NULL, %s);
+    #                     """
+    #             for fetch_task in jobs:
+    #                 now_s = now_utc.strftime(DATETIME_COL_FORMAT)
+    #                 params = (
+    #                     fetch_task.job_id,
+    #                     now_s,
+    #                     now_s,
+    #                     int(JobExecutionState.DAG_FETCH),
+    #                     fetch_task.worker,
+    #                     work_queue,
+    #                 )
+    #                 cursor.execute(sql, params=params)
+    #
+    #             conn.commit()
+    #             cursor.execute("UNLOCK TABLES;")
+    #
+    #     return jobs
 
     def get_and_start_jobs(
         self, workers: List[str], work_queue=0, now_utc=None
@@ -499,7 +502,7 @@ class DagDao:
                 "dag64 must be a str; if you have bytes call .decode(UTF-8)"
             )
 
-        if not waterflow.task.is_valid(dag.tasks, dag.adj_list):
+        if not waterflow.core.dao_models.is_valid(dag.tasks, dag.adj_list):
             raise ValueError("invalid task graph")
 
         with self.conn_pool.get_connection() as conn:
@@ -836,25 +839,19 @@ class DagDao:
         self, workers: List[str], work_queue=0, now_utc=None
     ) -> List[TaskAssignment]:
         """
-        Called to assign tasks to workers and market them as running.
+        Called to assign tasks to workers and mark them as running.
 
-        TODO - the caller (the service code) will need to call update_deps() for every returned
-        job_id.
+        The caller (the service code) MUST call update_deps() for every returned job_id.
         """
         if not isinstance(work_queue, int):
             raise ValueError("work_queue is wrong type")
-        self._check_worker_args(workers)  # TODO unit test this being enforced
+        self._check_worker_args(workers)
 
         now_utc = now_utc or datetime.datetime.utcnow()
         now_s = now_utc.strftime(DATETIME_COL_FORMAT)
 
-        # TODO maybe add a table to keep track of what worker has a task? - inserting different workers is probably a massive perf hit
-        # not a log... `task_ownership` -- primary key is task_id, and we do UPSERTs
-
         with self.conn_pool.get_connection() as conn:
             with conn.cursor() as cursor:
-
-                # cursor.execute("LOCK TABLES tasks WRITE;")
                 conn.start_transaction()
 
                 sql = """
@@ -889,20 +886,17 @@ class DagDao:
                     if cursor.rowcount != len(rows):
                         raise Exception(
                             f"rowcount: {cursor.rowcount}"
-                        )  # TODO: proper transaction rollback
-
-                    # TODO and then insert into some kind of `task_ownership` or `task_assignment` table
+                        )
 
                 conn.commit()
-                # cursor.execute("UNLOCK TABLES;")
 
                 return tasks
 
     def start_task(self, job_id, task_id, worker):
         """
-        Starts a specific task -- mostly for testing.  This does not check if the task can be started -- probably dont
-        want to expose this one (use it only for testing)
+        ONLY FOR TESTING.
 
+        Starts a specific task without checking if the task can be started
         TODO - maybe this would be useful for an API call where someone instructs a worker to start particular task
         """
         if len(worker) > WORKER_LENGTH:

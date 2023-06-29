@@ -1,3 +1,7 @@
+"""
+Codes that indicate why a task or job failed.
+"""
+
 # Job moved to FAILED state because someone canceled it
 JOB_CANCELED = 0
 

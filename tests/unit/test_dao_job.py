@@ -2,18 +2,16 @@ import base64
 import datetime
 import re
 import unittest
-from dataclasses import dataclass
-from typing import List, Dict
 
-from waterflow.exceptions import InvalidJobError, InvalidTaskState, InvalidJobState, NotImplementedYet
+from waterflow.core.exceptions import InvalidJobError, InvalidTaskState, InvalidJobState, NotImplementedYet
 import waterflow
 from waterflow import to_base64_str
-from waterflow import event_codes
-from waterflow.job import JobExecutionState, Dag
-from waterflow.dao import DagDao
-from waterflow.dao_models import PendingJob, JobStats
-from waterflow.task import Task, TaskState
-from .test_utils import get_conn_pool, path_to_sql, task_view1_list_to_dict, drop_and_recreate_database
+from waterflow.core import event_codes
+from waterflow.core.job_state import JobExecutionState
+from waterflow.server.dao import DagDao
+from waterflow.core.dao_models import PendingJob, JobStats
+from waterflow.core.task_state import TaskState
+from .test_utils import get_conn_pool, task_view1_list_to_dict, drop_and_recreate_database
 
 from waterflow.mocks.sample_dags import make_single_task_dag, make_linear_test_dag, make_test_dag
 

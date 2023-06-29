@@ -2,8 +2,8 @@ import base64
 import datetime
 import logging
 import uuid
-from mysql.connector import connect, pooling
-from .mysql_config import MysqlConfig
+from mysql.connector import pooling
+from waterflow.core.mysql_config import MysqlConfig
 import os
 import time
 
@@ -39,7 +39,7 @@ def check_utc_or_unaware(d: datetime.datetime):
 def get_connection_pool(dbconf, pool_name, pool_size=32):
 
     # NOTE:  somewhere on the internet said that the mysql connector supports a max of 32
-    # but the flask server can blow through more than 100 because I can't get it to share the conn pool object.
+    # but the server server can blow through more than 100 because I can't get it to share the conn pool object.
     logger = logging.getLogger("server")
     logger.info(f"getting connection pool host={dbconf.hostname}")
     return pooling.MySQLConnectionPool(

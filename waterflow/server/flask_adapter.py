@@ -3,7 +3,7 @@ Code to convert between Flask's representation of a request and the internal dat
 """
 import json
 from typing import Dict
-from waterflow.dao_models import PendingJob, WorkItem, FetchDagTask, TaskAssignment
+from waterflow.core.dao_models import PendingJob, WorkItem, FetchDagTask, TaskAssignment
 from waterflow.rest import Dag
 
 

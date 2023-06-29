@@ -3,10 +3,8 @@ Performance test against the dao alone.
 """
 import waterflow
 from waterflow import to_base64_str, StopWatch
-import waterflow.dao
-from waterflow.dao_models import PendingJob
-from waterflow.task import Task, TaskState
-from waterflow.job import Dag
+import waterflow.server.dao
+from waterflow.core.dao_models import PendingJob, Task, Dag
 
 
 def make_test_dag10():
@@ -78,13 +76,14 @@ def fetch_tasks_1by1(dao, n, worker="w"):
 
 
 def single_threaded_test(conn_pool, job_count, task_batch_size=1000):
-    dao = waterflow.dao.DagDao(conn_pool, "waterflow")
+    dao = waterflow.server.dao.DagDao(conn_pool, "waterflow")
     stw_total = StopWatch()
 
     job_ids = []
     stw1 = StopWatch()
     for job_index in range(job_count):
-        job_id = dao.add_job(PendingJob(waterflow.to_base64_str(f"job index={job_index}")))
+        job_name = f"job_{job_index}"
+        job_id = dao.add_job(PendingJob(job_name, waterflow.to_base64_str(f"job index={job_index}")))
         job_ids.append(job_id)
 
     print(f"{len(job_ids)} jobs created in {stw1}")
