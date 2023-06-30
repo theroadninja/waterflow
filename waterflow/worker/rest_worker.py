@@ -118,7 +118,7 @@ class RestWorker:
         self.name = "test_worker"
         self.halt_on_no_work = halt_on_no_work
 
-    def main_loop(self):
+    def run(self):
 
         stw = StopWatch()
         stop_signal = StopSignal()

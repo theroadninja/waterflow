@@ -16,4 +16,4 @@ if __name__ == "__main__":
     # perf tests use thread count of 512
     thread_count = 32
     worker = RestWorker(logger, config["server_url_base"], thread_count, config["work_queue"])
-    worker.main_loop()
+    worker.run()
